@@ -1,0 +1,2 @@
+# AmandaJordan
+All cheap trash 
