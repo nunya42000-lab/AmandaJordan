@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Thumbnail Gallery</title>
+    <!-- Load Tailwind CSS from CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <style>
+        /* Custom styles for the overlay */
+        .overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.9);
+            display: none; /* Hidden by default */
+            place-items: center;
+            z-index: 100;
+            cursor: pointer; /* Indicates it's clickable to close */
+            padding: 1rem;
+        }
+
+        .overlay-content {
+            max-width: 90%;
+            max-height: 90%;
+            display: block;
+            border-radius: 0.5rem;
+            box-shadow: 0 10px 25px rgba(255, 255, 255, 0.1);
+            transition: transform 0.3s ease-in-out;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f7f9fb;
+        }
+    </style>
+</head>
+<body class="p-4 sm:p-8">
+
+    <header class="text-center mb-10">
+        <h1 class="text-4xl font-extrabold text-gray-800 mb-2">My Photo Gallery</h1>
+        <p class="text-xl text-gray-600">Click any image to see the full size.</p>
+    </header>
+
+    <!-- Thumbnail Gallery Grid -->
+    <div id="gallery-container" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-4 max-w-7xl mx-auto">
+        <!-- Thumbnails will be injected here by JavaScript -->
+    </div>
+
+    <!-- Full-Screen Image Overlay -->
+    <div id="image-overlay" class="overlay" onclick="closeOverlay()">
+        <img id="full-image" class="overlay-content" src="" alt="Enlarged Image" onerror="this.src='https://placehold.co/1024x768/0F172A/ffffff?text=Image+Not+Found'">
+    </div>
+
+    <script>
+        // Array of image sources, matching the user's required pattern
+        const imageSources = [
+            'a1.jpg', 'a2.jpg', 'a3.jpg', 'a4.jpg',
+            'a5.jpg', 'a6.jpg', 'a7.jpg'
+        ];
+
+        // Global variables for Firebase setup (required by the platform, though not used for this static gallery)
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        /**
+         * Opens the full-screen overlay with the clicked image.
+         * @param {string} src The source path of the image to display.
+         */
+        function openOverlay(src) {
+            const fullImage = document.getElementById('full-image');
+            const overlay = document.getElementById('image-overlay');
+
+            fullImage.src = src;
+            overlay.style.display = 'grid'; // Use grid to center the image
+
+            // Handle image loading error using a placeholder URL
+            fullImage.onerror = function() {
+                fullImage.src = `https://placehold.co/1024x768/ef4444/ffffff?text=Error:+${src}`;
+            };
+        }
+
+        /**
+         * Closes the full-screen overlay.
+         */
+        function closeOverlay() {
+            document.getElementById('image-overlay').style.display = 'none';
+        }
+
+        /**
+         * Generates the thumbnail HTML elements and appends them to the container.
+         */
+        function initializeGallery() {
+            const container = document.getElementById('gallery-container');
+
+            imageSources.forEach(src => {
+                // Create the wrapper for each thumbnail
+                const wrapper = document.createElement('div');
+                wrapper.className = 'group overflow-hidden rounded-lg shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-[1.03] cursor-pointer';
+                wrapper.setAttribute('onclick', `openOverlay('${src}')`);
+
+                // Create the image element
+                const img = document.createElement('img');
+                img.src = src;
+                img.alt = `Thumbnail for ${src}`;
+                // Tailwind classes for the thumbnail image:
+                // w-full: full width of parent
+                // h-48: fixed height (adjust as needed)
+                // object-cover: ensures the image covers the area without distortion
+                // transition-all: smooth transition effects
+                // group-hover:opacity-75: slight dimming on hover
+                img.className = 'w-full h-48 object-cover transition-all duration-300 group-hover:opacity-75';
+
+                // Handle placeholder image since the actual files don't exist in this environment
+                img.onerror = function() {
+                    this.src = `https://placehold.co/600x400/94A3B8/ffffff?text=${src}`;
+                    this.style.objectFit = 'contain'; // Change fit for placeholder text
+                    this.title = 'Placeholder Image';
+                };
+
+                // Append the image to the wrapper, and the wrapper to the container
+                wrapper.appendChild(img);
+                container.appendChild(wrapper);
+            });
+        }
+
+        // Initialize the gallery when the window loads
+        window.onload = initializeGallery;
+
+        // Add keyboard listener to close overlay on ESC key
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') {
+                closeOverlay();
+            }
+        });
+
+    </script>
+</body>
+</html>
+
