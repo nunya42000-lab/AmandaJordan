@@ -1,5 +1,5 @@
 // gestures.js
-// Version: v75 - Smart Fallback & Active Constraint System
+// Version: v81 - Fixed Winding, Multi-Finger Long Taps, and Thresholds
 
 export class GestureEngine {
     constructor(targetElement, config, callbacks) {
@@ -9,7 +9,9 @@ export class GestureEngine {
             longPressTime: 500,   
             swipeThreshold: 30,   
             spatialThreshold: 10, 
-            tapPrecision: 30,     
+            tapPrecision: 30,
+            longSwipeThreshold: 250, // INCREASED to prevent accidental long swipes
+            multiSwipeThreshold: 10, // LOWERED for easier 2-finger swipes
             debug: false
         }, config || {});
 
@@ -19,9 +21,7 @@ export class GestureEngine {
             onDebug: (msg) => {}
         }, callbacks || {});
 
-        // Smart Fallback System
         this.allowedGestures = new Set(); 
-
         this.activePointers = {};
         this.history = [];
         this.tapStack = { count: 0, fingers: 0, timer: null, history: [], active: false };
@@ -38,7 +38,6 @@ export class GestureEngine {
         this._startStaleCheck();
     }
 
-    // --- NEW: Update the list of gestures the App actually cares about ---
     updateAllowed(list) {
         if (!list || !Array.isArray(list)) return;
         this.allowedGestures = new Set(list);
@@ -130,8 +129,6 @@ export class GestureEngine {
         const count = pointers.length;
         const now = Date.now();
 
-        // Continuous Gestures (Delete/Clear/Twist/Pinch)
-        // ... (Logic kept identical to v74) ...
         // 1. Squiggle 1F
         if (count === 1 && this.contState.squiggle.isTracking && !this.contState.squiggle.hasTriggered) {
             const x = e.clientX; const dx = x - this.contState.squiggle.lastX;
@@ -222,12 +219,16 @@ export class GestureEngine {
         const pathLen = this._getPathLen(primaryPath);
         const isClosed = netDist < 50;
         
-        // --- 1. Long Tap Priority ---
-        if (fingers === 1 && duration > this.config.longPressTime && netDist < this.config.tapPrecision) {
-            this._emitGesture('long_tap', 1, { dir: 'none' });
+        // --- 1. Long Tap Priority (Any Fingers) ---
+        // FIX: Removed "fingers === 1" restriction so 2F/3F long taps work
+        if (duration > this.config.longPressTime && netDist < this.config.tapPrecision) {
+            let base = 'long_tap';
+            if (fingers > 1) base += `_${fingers}f`;
+            this._emitGesture(base, fingers, { dir: 'none' });
             return;
         }
 
+        // Calculate winding even for lines, but only use it for shapes later
         let turnSum = 0;
         if (segments.length > 1) {
             for (let i = 0; i < segments.length - 1; i++) {
@@ -240,7 +241,7 @@ export class GestureEngine {
         let type = 'tap';
         let meta = { fingers: fingers, dir: startDir, winding: winding };
 
-        // --- 2. Hybrid Gestures ---
+        // --- 2. Hybrid Gestures (Pinch/Expand Swipe) ---
         if (fingers === 2 && pathLen > 40 && netDist > 40) {
              let startSpan = 0, endSpan = 0;
              inputs.forEach(s => {
@@ -280,8 +281,7 @@ export class GestureEngine {
             }
 
             if (!shapeDetected) {
-                // RESTORED: Distinguish Long Swipe vs Swipe vs Spatial Tap
-                if (netDist > 150) { 
+                if (netDist > this.config.longSwipeThreshold) { 
                     type = 'swipe_long'; 
                     meta.dir = this._getDirection(ec.x - sc.x, ec.y - sc.y); 
                 } 
@@ -298,9 +298,11 @@ export class GestureEngine {
             }
         } 
 
-        // --- 4. Multi Finger Swipes ---
-        if (fingers > 1 && type === 'tap' && netDist > 30) {
+        // --- 4. Multi Finger Swipes (FIXED THRESHOLD) ---
+        // Swiping with multiple fingers is harder, so we use a lower threshold
+        if (fingers > 1 && type === 'tap' && netDist > (this.config.multiSwipeThreshold || 10)) {
             type = 'swipe';
+            // Simple check for boomerang on multi-touch if needed
             if (segments.length >= 2) {
                  const angle = this._getAngleDiff(segments[0].vec, segments[1].vec);
                  if (Math.abs(angle) > 150) type = 'boomerang';
@@ -378,33 +380,35 @@ export class GestureEngine {
         }
     }
 
-    // --- SMART EMITTER WITH FALLBACK ---
+    // --- SMART EMITTER WITH FIXED WINDING LOGIC ---
     _emitGesture(baseType, fingers, meta, overrideName = null) {
         let id = baseType;
 
-        // Construct ID
+        // 1. Append Direction
         if (meta && meta.dir && meta.dir !== 'none') {
             const dir = meta.dir.toLowerCase();
-            // Most directional things just get appended
-            if (['swipe', 'swipe_long', 'spatial_tap', 'square', 'triangle', 'u_shape', 'corner', 'motion_tap_corner', 
-                 'triple_tap_corner', 'triple_tap_long', 'triple_tap_boomerang', 'double_tap'].includes(baseType) || baseType.startsWith('double_tap_')) {
-                 id += `_${dir}`;
-            } else if (!baseType.includes(dir)) {
-                 id += `_${dir}`;
+            const directionalTypes = ['swipe', 'swipe_long', 'spatial_tap', 'square', 'triangle', 'u_shape', 'corner', 'motion_tap_corner', 'triple_tap_corner', 'triple_tap_long', 'triple_tap_boomerang', 'double_tap'];
+            
+            if (directionalTypes.some(t => baseType.startsWith(t)) || baseType.includes('double_tap')) {
+                 if (!id.includes(dir)) id += `_${dir}`;
             }
         } else {
-            // Append _any for generic compatibility if needed
-            if (['swipe', 'swipe_long', 'boomerang', 'zigzag', 'spatial_tap', 
-                 'triple_tap_long', 'triple_tap_boomerang', 'triple_tap_corner'].includes(baseType)) {
+            const anyTypes = ['swipe', 'swipe_long', 'boomerang', 'zigzag', 'spatial_tap', 'triple_tap_long', 'triple_tap_boomerang', 'triple_tap_corner'];
+            if (anyTypes.includes(baseType) || (baseType.startsWith('motion_tap_') && !baseType.includes('corner'))) {
                  id += '_any'; 
-            }
-            if (baseType.startsWith('motion_tap_') && !baseType.includes('corner')) {
-                 id += '_any';
             }
         }
 
-        if (meta && meta.winding) id += `_${meta.winding}`;
+        // 2. Append Winding (CW/CCW) - RESTRICTED TO SHAPES ONLY
+        const windingShapes = ['corner', 'triangle', 'u_shape', 'square', 'triple_tap_corner', 'motion_tap_corner', 'boomerang'];
+        if (meta && meta.winding && windingShapes.some(s => baseType.includes(s))) {
+             id += `_${meta.winding}`;
+        }
+
+        // 3. Append Fingers
         if (fingers > 1 && !id.includes(`${fingers}f`) && !baseType.includes(`${fingers}f`)) id += `_${fingers}f`;
+        
+        // 4. Append Alignment
         if (meta && meta.align) {
             const map = { 'Vertical': 'vertical', 'Horizontal': 'horizontal', 'Diagonal SE': 'diagonal_se', 'Diagonal SW': 'diagonal_sw' };
             if (map[meta.align]) id += `_${map[meta.align]}`;
@@ -413,22 +417,48 @@ export class GestureEngine {
         const multiFingerBases = ['tap_2f', 'double_tap_2f', 'triple_tap_2f', 'long_tap_2f', 'tap_3f', 'double_tap_3f', 'triple_tap_3f', 'long_tap_3f'];
         if (multiFingerBases.includes(id)) id += '_any';
 
-        // --- SMART FALLBACK LOGIC ---
-        // If we have an active allowed list, and the detected gesture ISN'T in it, try to degrade it.
+        // --- SMART FALLBACK ---
         let finalId = id;
+        const tryFallback = (candidate) => {
+            if (this.allowedGestures.has(candidate)) { finalId = candidate; return true; }
+            return false;
+        };
 
         if (this.allowedGestures.size > 0 && !this.allowedGestures.has(id)) {
-            // 1. Fallback: Long Swipe -> Swipe
+            // A. Long Swipe -> Swipe
             if (id.startsWith('swipe_long_')) {
-                const fallback = id.replace('swipe_long_', 'swipe_');
-                if (this.allowedGestures.has(fallback)) finalId = fallback;
+                const standard = id.replace('swipe_long_', 'swipe_');
+                if (tryFallback(standard)) { /* done */ }
             }
-            // 2. Fallback: Spatial Tap -> Swipe (Micro-swipes count as swipes if spatial not mapped)
+            // B. Spatial Tap -> Swipe 
             else if (id.startsWith('spatial_tap_')) {
-                const fallback = id.replace('spatial_tap_', 'swipe_');
-                if (this.allowedGestures.has(fallback)) finalId = fallback;
+                 const standard = id.replace('spatial_tap_', 'swipe_');
+                 if (tryFallback(standard)) { /* done */ }
+            }
+            
+            // C. Generic Fallbacks
+            if (!this.allowedGestures.has(finalId)) {
+                const dirs = ['_up','_down','_left','_right','_nw','_ne','_sw','_se'];
+                for (let d of dirs) {
+                    if (finalId.includes(d)) {
+                        let test = finalId.replace(d, '_any');
+                        if (tryFallback(test)) break;
+                    }
+                }
+            }
+            if (!this.allowedGestures.has(finalId) && finalId.includes('tap_')) {
+                const aligns = ['_vertical','_horizontal','_diagonal_se','_diagonal_sw'];
+                for (let a of aligns) {
+                    if (finalId.includes(a)) {
+                        let test = finalId.replace(a, '_any');
+                        if (tryFallback(test)) break;
+                    }
+                }
             }
         }
+
+        // Strict Filter: Only emit if allowed or if allowed list is empty
+        if (this.allowedGestures.size > 0 && !this.allowedGestures.has(finalId)) return;
 
         const name = overrideName || finalId;
         this.callbacks.onGesture({ id: finalId, base: baseType, fingers: fingers, meta: meta, name: name });
