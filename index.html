@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Gesture Engine Diagnostics</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            background-color: #000;
+            color: #fff;
+            touch-action: none;
+            overscroll-behavior: none;
+            font-family: monospace;
+            overflow: hidden;
+        }
+        #gesture-pad {
+            position: fixed;
+            top: 60px;
+            left: 0;
+            right: 0;
+            bottom: 80px;
+            z-index: 10;
+            border: 2px dashed #333;
+            background: rgba(20, 20, 20, 0.5);
+        }
+        .status-bar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 60px;
+            background: #111;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 1rem;
+            z-index: 20;
+            border-bottom: 1px solid #333;
+        }
+        .footer-bar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 80px;
+            background: #111;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 1rem;
+            z-index: 20;
+            border-top: 1px solid #333;
+        }
+        #target-display {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: #3b82f6;
+            text-align: center;
+            width: 100%;
+        }
+        #detected-display {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 2rem;
+            color: rgba(255,255,255,0.1);
+            pointer-events: none;
+            white-space: nowrap;
+        }
+        .flash-success { animation: flashGreen 0.3s ease-out; }
+        .flash-fail { animation: flashRed 0.3s ease-out; }
+
+        @keyframes flashGreen { 0% { background: rgba(0,255,0,0.5); } 100% { background: transparent; } }
+        @keyframes flashRed { 0% { background: rgba(255,0,0,0.5); } 100% { background: transparent; } }
+        
+        button {
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+        .btn-skip { background: #333; color: #ccc; border: 1px solid #555; }
+        .btn-reset { background: #550000; color: #f87171; border: 1px solid #7f1d1d; }
+        .btn-copy { background: #15803d; color: #fff; display: none; }
+    </style>
+</head>
+<body>
+
+    <div class="status-bar">
+        <div id="counter" class="text-xs text-gray-500">0 / 0</div>
+        <div id="target-display">Loading...</div>
+        <div class="text-xs text-gray-500" id="mode-display">ALL</div>
+    </div>
+
+    <div id="gesture-pad">
+        <div id="detected-display">Waiting...</div>
+    </div>
+
+    <div class="footer-bar">
+        <button class="btn-reset" onclick="resetTest()">Restart</button>
+        <button class="btn-skip" onclick="skipGesture()">Skip ⏭️</button>
+        <button class="btn-copy" id="btn-copy" onclick="copyReport()">📋 Copy Report</button>
+    </div>
+
+    <script type="module">
+        import { GestureEngine } from './gestures.js';
+
+        // --- MASTER LIST FROM YOUR SETTINGS.JS ---
+        const ALL_GESTURES = [
+            // Taps
+            'tap', 'double_tap', 'triple_tap', 'long_tap',
+            
+            // Spatial Taps
+            'spatial_tap_up', 'spatial_tap_down', 'spatial_tap_left', 'spatial_tap_right', 
+            'spatial_tap_nw', 'spatial_tap_ne', 'spatial_tap_sw', 'spatial_tap_se',
+            
+            // Basic Swipes
+            'swipe_up', 'swipe_down', 'swipe_left', 'swipe_right', 
+            'swipe_nw', 'swipe_ne', 'swipe_sw', 'swipe_se',
+            
+            // Long Swipes (The problematic ones)
+            'swipe_long_up', 'swipe_long_down', 'swipe_long_left', 'swipe_long_right', 
+            'swipe_long_nw', 'swipe_long_ne', 'swipe_long_sw', 'swipe_long_se',
+
+            // Multi-Finger Taps
+            'tap_2f_any', 'tap_2f_vertical', 'tap_2f_horizontal',
+            'double_tap_2f_any', 'triple_tap_2f_any', 'long_tap_2f_any',
+            'tap_3f_any', 'double_tap_3f_any', 'triple_tap_3f_any', 'long_tap_3f_any',
+
+            // Multi-Finger Swipes
+            'swipe_up_2f', 'swipe_down_2f', 'swipe_left_2f', 'swipe_right_2f',
+            'swipe_up_3f', 'swipe_down_3f', 'swipe_left_3f', 'swipe_right_3f',
+            
+            // Complex / Shapes
+            'pinch_swipe_any_2f', 'expand_swipe_any_2f',
+            'zigzag_any', 
+            'corner_cw', 'corner_ccw',
+            'triangle_cw', 'triangle_ccw',
+            'square_cw', 'square_ccw',
+            'u_shape_cw', 'u_shape_ccw',
+            
+            // Legacy / Weird
+            'boomerang_any', 'boomerang_up', 'boomerang_down'
+        ];
+
+        let currentIndex = 0;
+        let results = {
+            passed: [],
+            skipped: [], // Includes what was detected instead
+            failedAttempts: [] // Log of what happened before passing/skipping
+        };
+        let engine = null;
+
+        // UI Refs
+        const targetEl = document.getElementById('target-display');
+        const detectedEl = document.getElementById('detected-display');
+        const counterEl = document.getElementById('counter');
+        const pad = document.getElementById('gesture-pad');
+        const btnCopy = document.getElementById('btn-copy');
+        const btnSkip = document.querySelector('.btn-skip');
+
+        function init() {
+            // Note: We deliberately DO NOT call updateAllowed() so the engine emits raw data.
+            // This lets us see "what is this actually recognized as?"
+            
+            engine = new GestureEngine(document.body, {
+                debug: true,
+                tapDelay: 300,
+                swipeThreshold: 30,
+                // MATCHING YOUR LATEST FIX:
+                longSwipeThreshold: 250 
+            }, {
+                onGesture: handleGesture
+            });
+            
+            render();
+        }
+
+        function handleGesture(data) {
+            if (currentIndex >= ALL_GESTURES.length) return;
+
+            const target = ALL_GESTURES[currentIndex];
+            const detected = data.id;
+
+            // Visual Feedback
+            detectedEl.textContent = detected;
+            detectedEl.style.opacity = '1';
+            setTimeout(() => detectedEl.style.opacity = '0.1', 1000);
+
+            // Strict Match Check
+            // We allow suffix matching for generic types (e.g. asking for "corner_cw", accepting "corner_up_cw")
+            let match = false;
+            
+            if (detected === target) match = true;
+            else if (target.endsWith('_any') && detected.startsWith(target.replace('_any', ''))) match = true;
+            // Allow directional variants if we asked for a specific shape winding
+            else if (['corner','triangle','square','u_shape'].some(s => target.startsWith(s)) && detected.includes(target)) match = true;
+
+            if (match) {
+                // SUCCESS
+                pad.classList.add('flash-success');
+                setTimeout(() => pad.classList.remove('flash-success'), 300);
+                results.passed.push(target);
+                next();
+            } else {
+                // FAIL / RETRY
+                pad.classList.add('flash-fail');
+                setTimeout(() => pad.classList.remove('flash-fail'), 300);
+                results.failedAttempts.push({ target: target, detected: detected });
+                console.log(`Expected: ${target}, Got: ${detected}`);
+            }
+        }
+
+        function next() {
+            currentIndex++;
+            if (currentIndex >= ALL_GESTURES.length) {
+                finish();
+            } else {
+                render();
+            }
+        }
+
+        window.skipGesture = function() {
+            if (currentIndex >= ALL_GESTURES.length) return;
+            const target = ALL_GESTURES[currentIndex];
+            
+            // Find what they tried most recently for this target
+            const lastFail = results.failedAttempts.filter(f => f.target === target).pop();
+            const detected = lastFail ? lastFail.detected : "No Input";
+
+            results.skipped.push({ target: target, lastDetected: detected });
+            next();
+        }
+
+        window.resetTest = function() {
+            currentIndex = 0;
+            results = { passed: [], skipped: [], failedAttempts: [] };
+            btnCopy.style.display = 'none';
+            btnSkip.style.display = 'block';
+            render();
+        }
+
+        window.copyReport = function() {
+            const report = {
+                total: ALL_GESTURES.length,
+                passedCount: results.passed.length,
+                skippedCount: results.skipped.length,
+                issues: results.skipped // This is the important part for debugging
+            };
+            
+            navigator.clipboard.writeText(JSON.stringify(report, null, 2));
+            alert("Report copied to clipboard! Paste it in the chat.");
+        }
+
+        function render() {
+            if (currentIndex >= ALL_GESTURES.length) return;
+            targetEl.textContent = ALL_GESTURES[currentIndex].toUpperCase().replace(/_/g, ' ');
+            counterEl.textContent = `${currentIndex + 1} / ${ALL_GESTURES.length}`;
+            detectedEl.textContent = "Draw Here";
+        }
+
+        function finish() {
+            targetEl.textContent = "TEST COMPLETE";
+            detectedEl.textContent = "DONE";
+            btnCopy.style.display = 'block';
+            btnSkip.style.display = 'none';
+        }
+
+        // Initialize on load
+        init();
+
+    </script>
+</body>
+</html>
