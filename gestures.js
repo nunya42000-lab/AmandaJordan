@@ -1,5 +1,5 @@
 // gestures.js
-// Version: v81 - Fixed Winding, Multi-Finger Long Taps, and Thresholds
+// Version: v82 - Precision Tuning (Spatial Taps, Shapes, & Multi-Touch)
 
 export class GestureEngine {
     constructor(targetElement, config, callbacks) {
@@ -7,11 +7,11 @@ export class GestureEngine {
         this.config = Object.assign({
             tapDelay: 300,        
             longPressTime: 500,   
-            swipeThreshold: 30,   
+            swipeThreshold: 50,   // INCREASED (was 30) to fix Spatial Tap overlap
             spatialThreshold: 10, 
             tapPrecision: 30,
-            longSwipeThreshold: 250, // INCREASED to prevent accidental long swipes
-            multiSwipeThreshold: 10, // LOWERED for easier 2-finger swipes
+            longSwipeThreshold: 250, 
+            multiSwipeThreshold: 10, // Keep low for easy 2-finger swipes
             debug: false
         }, config || {});
 
@@ -220,15 +220,18 @@ export class GestureEngine {
         const isClosed = netDist < 50;
         
         // --- 1. Long Tap Priority (Any Fingers) ---
-        // FIX: Removed "fingers === 1" restriction so 2F/3F long taps work
         if (duration > this.config.longPressTime && netDist < this.config.tapPrecision) {
             let base = 'long_tap';
-            if (fingers > 1) base += `_${fingers}f`;
-            this._emitGesture(base, fingers, { dir: 'none' });
+            let meta = { dir: 'none', fingers: fingers };
+            // FIX: Added alignment calculation for Long Taps
+            if (fingers > 1) {
+                base += `_${fingers}f`;
+                meta.align = this._getAlignment(inputs);
+            }
+            this._emitGesture(base, fingers, meta);
             return;
         }
 
-        // Calculate winding even for lines, but only use it for shapes later
         let turnSum = 0;
         if (segments.length > 1) {
             for (let i = 0; i < segments.length - 1; i++) {
@@ -241,7 +244,7 @@ export class GestureEngine {
         let type = 'tap';
         let meta = { fingers: fingers, dir: startDir, winding: winding };
 
-        // --- 2. Hybrid Gestures (Pinch/Expand Swipe) ---
+        // --- 2. Hybrid Gestures ---
         if (fingers === 2 && pathLen > 40 && netDist > 40) {
              let startSpan = 0, endSpan = 0;
              inputs.forEach(s => {
@@ -262,6 +265,7 @@ export class GestureEngine {
         // --- 3. One Finger Logic (Shapes & Swipes) ---
         if (fingers === 1) {
             let shapeDetected = false;
+            // FIX: Use swipeThreshold instead of fixed 150 for shape gate
             if (pathLen > this.config.swipeThreshold) {
                 if (segments.length >= 3) {
                     const a1 = this._getAngleDiff(segments[0].vec, segments[1].vec);
@@ -298,11 +302,10 @@ export class GestureEngine {
             }
         } 
 
-        // --- 4. Multi Finger Swipes (FIXED THRESHOLD) ---
-        // Swiping with multiple fingers is harder, so we use a lower threshold
+        // --- 4. Multi Finger Swipes ---
+        // Uses lower threshold for easier detection
         if (fingers > 1 && type === 'tap' && netDist > (this.config.multiSwipeThreshold || 10)) {
             type = 'swipe';
-            // Simple check for boomerang on multi-touch if needed
             if (segments.length >= 2) {
                  const angle = this._getAngleDiff(segments[0].vec, segments[1].vec);
                  if (Math.abs(angle) > 150) type = 'boomerang';
@@ -380,7 +383,6 @@ export class GestureEngine {
         }
     }
 
-    // --- SMART EMITTER WITH FIXED WINDING LOGIC ---
     _emitGesture(baseType, fingers, meta, overrideName = null) {
         let id = baseType;
 
@@ -414,10 +416,10 @@ export class GestureEngine {
             if (map[meta.align]) id += `_${map[meta.align]}`;
         }
 
-        const multiFingerBases = ['tap_2f', 'double_tap_2f', 'triple_tap_2f', 'long_tap_2f', 'tap_3f', 'double_tap_3f', 'triple_tap_3f', 'long_tap_3f'];
-        if (multiFingerBases.includes(id)) id += '_any';
-
-        // --- SMART FALLBACK ---
+        // 5. Normalization for Multi-Finger Taps (REMOVED _any FORCE)
+        // Previous versions forced _any here, which broke specific alignment detections like long_tap_2f_vertical
+        
+        // --- SMART FALLBACK LOGIC ---
         let finalId = id;
         const tryFallback = (candidate) => {
             if (this.allowedGestures.has(candidate)) { finalId = candidate; return true; }
@@ -425,18 +427,14 @@ export class GestureEngine {
         };
 
         if (this.allowedGestures.size > 0 && !this.allowedGestures.has(id)) {
-            // A. Long Swipe -> Swipe
             if (id.startsWith('swipe_long_')) {
                 const standard = id.replace('swipe_long_', 'swipe_');
-                if (tryFallback(standard)) { /* done */ }
+                if (tryFallback(standard)) { /* matched */ }
             }
-            // B. Spatial Tap -> Swipe 
             else if (id.startsWith('spatial_tap_')) {
                  const standard = id.replace('spatial_tap_', 'swipe_');
-                 if (tryFallback(standard)) { /* done */ }
+                 if (tryFallback(standard)) { /* matched */ }
             }
-            
-            // C. Generic Fallbacks
             if (!this.allowedGestures.has(finalId)) {
                 const dirs = ['_up','_down','_left','_right','_nw','_ne','_sw','_se'];
                 for (let d of dirs) {
@@ -457,7 +455,6 @@ export class GestureEngine {
             }
         }
 
-        // Strict Filter: Only emit if allowed or if allowed list is empty
         if (this.allowedGestures.size > 0 && !this.allowedGestures.has(finalId)) return;
 
         const name = overrideName || finalId;
@@ -466,22 +463,37 @@ export class GestureEngine {
 
     // --- UTILS ---
     _getRotationAngle(p1, p2) { return Math.atan2(p2.y - p1.y, p2.x - p1.x) * 180 / Math.PI; }
+    
+    // FIX: High Resolution Segmenter (Samples every point)
     _segmentPath(pts) {
         if (pts.length < 5) return [{dir: 'none', vec:{x:0,y:0}}];
-        const segments = []; let start = 0; const threshold = 60; 
-        for (let i = 5; i < pts.length - 5; i+=3) {
+        const segments = []; 
+        let start = 0; 
+        const threshold = 45; // LOWERED (was 60) to catch soft corners
+        
+        // FIXED: Loop increments by 1 for maximum precision on shapes
+        for (let i = 2; i < pts.length - 2; i++) {
             const dx1 = pts[i].x - pts[start].x; const dy1 = pts[i].y - pts[start].y;
-            const dx2 = pts[i+5].x - pts[i].x; const dy2 = pts[i+5].y - pts[i].y;
-            const a1 = Math.atan2(dy1, dx1) * 180/Math.PI; const a2 = Math.atan2(dy2, dx2) * 180/Math.PI;
-            let diff = Math.abs(a1-a2); if (diff > 180) diff = 360 - diff;
-            if (diff > threshold && Math.hypot(dx1,dy1) > 20) {
-                segments.push({ dir: this._getDirection(dx1, dy1), vec: {x:dx1, y:dy1} }); start = i;
+            // Look ahead 5 points
+            const nextIdx = Math.min(i + 5, pts.length - 1);
+            const dx2 = pts[nextIdx].x - pts[i].x; const dy2 = pts[nextIdx].y - pts[i].y;
+            
+            const a1 = Math.atan2(dy1, dx1) * 180/Math.PI; 
+            const a2 = Math.atan2(dy2, dx2) * 180/Math.PI;
+            
+            let diff = Math.abs(a1-a2); 
+            if (diff > 180) diff = 360 - diff;
+            
+            if (diff > threshold && Math.hypot(dx1,dy1) > 10) { // LOWERED Length requirement
+                segments.push({ dir: this._getDirection(dx1, dy1), vec: {x:dx1, y:dy1} }); 
+                start = i;
             }
         }
         const lastDx = pts[pts.length-1].x - pts[start].x; const lastDy = pts[pts.length-1].y - pts[start].y;
         if (Math.hypot(lastDx, lastDy) > 10) segments.push({ dir: this._getDirection(lastDx, lastDy), vec: {x:lastDx, y:lastDy} });
         return segments;
     }
+    
     _getTurnDir(v1, v2) { return (v1.x * v2.y - v1.y * v2.x); }
     _getAngleDiff(v1, v2) { const a1 = Math.atan2(v1.y, v1.x)*180/Math.PI; const a2 = Math.atan2(v2.y, v2.x)*180/Math.PI; let d = Math.abs(a1-a2); if(d>180) d=360-d; return d; }
     _getPathLen(pts) { let l=0; for(let i=1;i<pts.length;i++) l+=Math.hypot(pts[i].x-pts[i-1].x, pts[i].y-pts[i-1].y); return l; }
