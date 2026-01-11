@@ -3,333 +3,262 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Clean Gesture Tester</title>
+    <title>Gesture Engine Tester v99</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        body { 
-            background-color: #000; 
-            color: #fff; 
-            overflow: hidden; 
-            touch-action: none; 
-            user-select: none;
+        body {
+            background-color: #000;
+            color: #e5e5e5;
+            touch-action: none; /* Critical for gesture handling */
+            overflow: hidden;
             font-family: 'Inter', sans-serif;
         }
-        
-        /* The Ghost UI Layer - Clicks pass through this */
-        #ghost-ui {
+        #touch-zone {
             position: absolute;
-            inset: 0;
+            top: 0; left: 0; right: 0; bottom: 300px;
+            z-index: 10;
+            cursor: crosshair;
+        }
+        #hud-layer {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 300px;
+            z-index: 5;
+            pointer-events: none;
+        }
+        #console-area {
+            position: absolute;
+            bottom: 0; left: 0; right: 0;
+            height: 300px;
+            background: #111;
+            border-top: 1px solid #333;
+            z-index: 20;
             display: flex;
             flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            pointer-events: none; /* KEY: This lets you swipe through text */
-            z-index: 10;
         }
-
-        #trail-canvas {
+        .log-entry {
+            font-family: monospace;
+            font-size: 12px;
+            padding: 4px 8px;
+            border-bottom: 1px solid #222;
+        }
+        .log-entry.gesture { color: #4ade80; }
+        .log-entry.continuous { color: #60a5fa; }
+        .log-entry.spatial { color: #facc15; }
+        
+        .marker {
             position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
+            width: 10px; height: 10px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.5);
+            transform: translate(-50%, -50%);
             pointer-events: none;
-            z-index: 5;
         }
-
-        .status-bar {
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            padding: 10px 20px;
-            display: flex;
-            justify-content: space-between;
-            pointer-events: none; /* Let clicks pass */
-            z-index: 20;
-        }
-
-        /* Buttons need pointer events back */
-        .interactive-btn {
-            pointer-events: auto;
-            cursor: pointer;
-        }
-
-        /* Animations */
-        @keyframes flashGreen { 0% { background: rgba(0,255,0,0.5); } 100% { background: transparent; } }
-        @keyframes flashRed { 0% { background: rgba(255,0,0,0.5); } 100% { background: transparent; } }
-        .flash-pass { animation: flashGreen 0.3s ease-out; }
-        .flash-fail { animation: flashRed 0.3s ease-out; }
     </style>
 </head>
-<body id="app-body">
+<body class="h-screen w-screen flex flex-col">
 
-    <canvas id="trail-canvas"></canvas>
-
-    <div class="status-bar">
-        <div class="text-xs text-gray-500 font-mono">
-            TEST: <span id="progress-display">0/0</span>
+    <div class="fixed top-0 left-0 right-0 p-2 bg-black/80 backdrop-blur z-50 flex justify-between items-center border-b border-gray-800">
+        <h1 class="font-bold text-sm text-gray-400">Gesture Engine v99</h1>
+        <div class="flex gap-2 text-xs">
+            <div>
+                <label>Tap (ms)</label>
+                <input type="range" id="param-tap" min="100" max="800" step="50" value="300" class="w-20">
+                <span id="val-tap" class="font-mono">300</span>
+            </div>
+            <div>
+                <label>Dist (px)</label>
+                <input type="range" id="param-dist" min="10" max="100" step="5" value="30" class="w-20">
+                <span id="val-dist" class="font-mono">30</span>
+            </div>
         </div>
-        <button id="end-early-btn" class="interactive-btn bg-red-900/50 hover:bg-red-700 text-white text-[10px] px-2 py-1 rounded border border-red-800">
-            FINISH & REPORT
-        </button>
     </div>
 
-    <div id="ghost-ui">
-        <div id="instruction-label" class="text-gray-600 text-sm uppercase tracking-[0.2em] mb-2">PERFORM</div>
-        <div id="gesture-name" class="text-5xl md:text-7xl font-black text-white/20 text-center px-4 leading-tight transition-all duration-200">
-            LOADING...
+    <canvas id="hud-layer"></canvas>
+
+    <div id="touch-zone">
+        <div class="absolute inset-0 flex items-center justify-center pointer-events-none opacity-20">
+            <div class="text-center">
+                <p class="text-4xl font-bold">TOUCH AREA</p>
+                <p class="text-sm mt-2">Perform Swipes, Taps, Zigzags, Pinches</p>
+            </div>
         </div>
-        <div id="feedback-sub" class="mt-4 text-xl font-mono text-yellow-500/80 h-6">Attempt 1/3</div>
-        <div id="last-detected" class="mt-2 text-xs font-mono text-gray-600 h-4"></div>
     </div>
 
-    <div id="report-modal" class="fixed inset-0 bg-black z-50 hidden flex flex-col p-6">
-        <h1 class="text-2xl font-bold text-green-500 mb-2">DIAGNOSTIC REPORT</h1>
-        <p class="text-gray-400 text-xs mb-4">Copy this and give it to the developer.</p>
-        <textarea id="report-output" class="flex-grow bg-gray-900 border border-gray-700 text-green-400 font-mono text-xs p-4 rounded resize-none mb-4 outline-none"></textarea>
-        <div class="flex gap-2 h-12">
-            <button id="copy-btn" class="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded interactive-btn">COPY</button>
-            <button onclick="location.reload()" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-bold rounded interactive-btn">RESTART</button>
+    <div id="console-area">
+        <div class="p-2 bg-gray-900 border-b border-gray-800 flex justify-between items-center">
+            <span class="font-bold text-xs uppercase text-gray-500">Event Log</span>
+            <button id="btn-clear" class="text-xs bg-gray-700 px-2 py-1 rounded hover:bg-gray-600">Clear</button>
+        </div>
+        <div id="log-content" class="flex-grow overflow-y-auto p-2 bg-black font-mono text-xs">
+            </div>
+        <div id="status-bar" class="p-2 bg-gray-800 text-xs font-bold text-white flex justify-between">
+            <span id="status-fingers">Fingers: 0</span>
+            <span id="status-continuous">State: Idle</span>
         </div>
     </div>
 
     <script type="module">
         import { GestureEngine } from './gestures.js';
 
-        // --- THE FULL LIST ---
-        const TEST_QUEUE = [
-            // Basics
-            'tap', 'double_tap', 'triple_tap', 'long_tap',
+        // --- DOM Elements ---
+        const touchZone = document.getElementById('touch-zone');
+        const canvas = document.getElementById('hud-layer');
+        const ctx = canvas.getContext('2d');
+        const logContainer = document.getElementById('log-content');
+        const btnClear = document.getElementById('btn-clear');
+        const statFingers = document.getElementById('status-fingers');
+        const statState = document.getElementById('status-continuous');
+        
+        // --- Canvas Sizing ---
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight - 300; // Subtract console height
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
 
-            // Spatial Taps
-            'motion_tap_spatial_any', 
-            'motion_tap_spatial_up', 'motion_tap_spatial_down', 'motion_tap_spatial_left', 'motion_tap_spatial_right',
-            
-            // 3-Tap Lines
-            'triple_tap_spatial_line_up', 'triple_tap_spatial_line_down', 'triple_tap_spatial_line_left', 'triple_tap_spatial_line_right',
-
-            // Corners
-            'triple_tap_spatial_corner_ne', 'triple_tap_spatial_corner_nw', 'triple_tap_spatial_corner_se', 'triple_tap_spatial_corner_sw',
-
-            // Multi-Touch
-            'tap_2f_any', 'double_tap_2f_any', 'triple_tap_2f_any',
-            'tap_3f_any', 'double_tap_3f_any', 'triple_tap_3f_any',
-
-            // Swipes
-            'swipe_up', 'swipe_down', 'swipe_left', 'swipe_right',
-            'swipe_long_up', 'swipe_long_down', 'swipe_long_left', 'swipe_long_right',
-
-            // Multi-Swipes
-            'swipe_up_2f', 'swipe_down_2f', 'swipe_left_2f', 'swipe_right_2f',
-            'pinch_swipe_any_2f', 'expand_swipe_any_2f',
-
-            // Shapes
-            'boomerang_up', 'boomerang_down', 'boomerang_left', 'boomerang_right',
-            'zigzag_up', 'zigzag_down', 'zigzag_left', 'zigzag_right',
-            
-            // Complex
-            'square_cw', 'square_ccw',
-            'triangle_cw', 'triangle_ccw'
-        ];
-
-        // --- STATE ---
-        let currentIndex = 0;
-        let attempts = 1;
-        let results = [];
-        let engine;
-        let trailCtx;
-        let fadeTimer;
-
-        // --- DOM ---
-        const els = {
-            body: document.getElementById('app-body'),
-            name: document.getElementById('gesture-name'),
-            sub: document.getElementById('feedback-sub'),
-            detected: document.getElementById('last-detected'),
-            progress: document.getElementById('progress-display'),
-            canvas: document.getElementById('trail-canvas'),
-            modal: document.getElementById('report-modal'),
-            report: document.getElementById('report-output'),
-            copyBtn: document.getElementById('copy-btn'),
-            endBtn: document.getElementById('end-early-btn')
-        };
-
-        // --- INIT ---
-        function init() {
-            // 1. Setup Canvas
-            els.canvas.width = window.innerWidth;
-            els.canvas.height = window.innerHeight;
-            trailCtx = els.canvas.getContext('2d');
-
-            // 2. Setup Engine
-            engine = new GestureEngine(document.body, {
-                debug: true,
-                tapDelay: 300,
-                swipeThreshold: 30
-            }, {
-                onGesture: (d) => checkGesture(d),
-                onContinuous: (d) => { /* Ignore continuous for specific tests unless needed */ },
-                onDebug: (msg) => console.log(msg)
-            });
-
-            // 3. Unblock all gestures
-            engine.updateAllowed(TEST_QUEUE);
-
-            // 4. Start Test
-            loadNext();
-
-            // 5. Drawing Listeners
-            document.body.addEventListener('pointermove', drawTrail);
-            document.body.addEventListener('pointerdown', startTrail);
+        // --- Logging Helper ---
+        function log(msg, type = 'normal') {
+            const el = document.createElement('div');
+            el.className = `log-entry ${type}`;
+            const time = new Date().toLocaleTimeString().split(' ')[0];
+            el.innerHTML = `<span class="opacity-50">[${time}]</span> ${msg}`;
+            logContainer.prepend(el);
+            if(logContainer.children.length > 50) logContainer.lastChild.remove();
         }
 
-        // --- LOGIC ---
-        function loadNext() {
-            if (currentIndex >= TEST_QUEUE.length) {
-                finish();
-                return;
-            }
+        btnClear.onclick = () => logContainer.innerHTML = '';
 
-            const target = TEST_QUEUE[currentIndex];
-            els.name.textContent = target.replace(/_/g, ' ').replace('spatial', '').trim();
-            els.name.style.color = 'rgba(255,255,255,0.2)'; // Reset color
-            
-            attempts = 1;
-            updateStatus();
-            els.detected.textContent = "";
-            els.progress.textContent = `${currentIndex + 1}/${TEST_QUEUE.length}`;
-        }
+        // --- Trail Visualizer ---
+        let activePaths = {}; // pointerId -> array of points
 
-        function updateStatus() {
-            els.sub.textContent = `Attempt ${attempts}/3`;
-            els.sub.style.color = attempts === 1 ? '#4ade80' : (attempts === 2 ? '#facc15' : '#f87171');
-        }
+        function drawPaths() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.lineWidth = 3;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
 
-        function checkGesture(data) {
-            if (currentIndex >= TEST_QUEUE.length) return;
+            Object.keys(activePaths).forEach(pid => {
+                const pts = activePaths[pid];
+                if(pts.length < 2) return;
 
-            const target = TEST_QUEUE[currentIndex];
-            const detectedID = data.id;
-
-            let isMatch = false;
-
-            // 1. Exact
-            if (detectedID === target) isMatch = true;
-
-            // 2. Wildcards (e.g. target="swipe_any", detected="swipe_up" -> PASS)
-            if (!isMatch && target.endsWith('_any')) {
-                const base = target.replace('_any', '');
-                if (detectedID.startsWith(base)) isMatch = true;
-            }
-
-            // 3. Relaxed Long Swipes (target="swipe_up", detected="swipe_long_up" -> PASS)
-            if (!isMatch && detectedID.includes('long') && !target.includes('long')) {
-                if (detectedID.replace('long_', '') === target) isMatch = true;
-            }
-
-            els.detected.textContent = `Saw: ${detectedID}`;
-
-            if (isMatch) {
-                // Success
-                flash('flash-pass');
-                results.push({ target, status: 'PASS', attempts, detected: detectedID });
-                
-                // Visual feedback before moving on
-                els.name.style.color = '#4ade80'; // Green text
-                els.name.textContent = "YES";
-                
-                setTimeout(() => {
-                    currentIndex++;
-                    loadNext();
-                }, 400);
-
-            } else {
-                // Fail
-                flash('flash-fail');
-                
-                if (attempts >= 3) {
-                    results.push({ target, status: 'FAIL', attempts, detected: detectedID });
-                    
-                    els.name.style.color = '#f87171'; // Red text
-                    els.name.textContent = "SKIP";
-                    
-                    setTimeout(() => {
-                        currentIndex++;
-                        loadNext();
-                    }, 400);
-                } else {
-                    attempts++;
-                    updateStatus();
+                ctx.beginPath();
+                ctx.moveTo(pts[0].x, pts[0].y);
+                for(let i=1; i<pts.length; i++) {
+                    ctx.lineTo(pts[i].x, pts[i].y);
                 }
-            }
-        }
-
-        function flash(className) {
-            els.body.classList.remove('flash-pass', 'flash-fail');
-            void els.body.offsetWidth; // Trigger reflow
-            els.body.classList.add(className);
-        }
-
-        function finish() {
-            els.modal.classList.remove('hidden');
-            
-            const passed = results.filter(r => r.status === 'PASS');
-            const failed = results.filter(r => r.status === 'FAIL');
-
-            let txt = `GESTURE REPORT (${Math.round((passed.length / results.length)*100)}% Success)\n`;
-            txt += "----------------------------------------\n";
-            
-            if(failed.length > 0) {
-                txt += "FAILED ITEMS:\n";
-                failed.forEach(f => {
-                    txt += `[X] ${f.target} (Last saw: ${f.detected || 'none'})\n`;
-                });
-                txt += "\n";
-            }
-
-            txt += "PASSED ITEMS:\n";
-            passed.forEach(p => {
-                txt += `[O] ${p.target} (${p.attempts} tries)\n`;
+                
+                // Color based on finger index (roughly)
+                const colors = ['#4ade80', '#60a5fa', '#f87171', '#facc15'];
+                ctx.strokeStyle = colors[pid % colors.length];
+                ctx.stroke();
             });
-
-            els.report.value = txt;
+            requestAnimationFrame(drawPaths);
         }
+        drawPaths();
 
-        // --- CANVAS TRAIL ---
-        function startTrail() {
-            trailCtx.clearRect(0, 0, els.canvas.width, els.canvas.height);
-            clearTimeout(fadeTimer);
-        }
-
-        function drawTrail(e) {
-            if (e.buttons === 0) return;
-            trailCtx.lineWidth = 4;
-            trailCtx.lineCap = 'round';
-            trailCtx.strokeStyle = 'rgba(74, 222, 128, 0.6)';
-            trailCtx.lineTo(e.clientX, e.clientY);
-            trailCtx.stroke();
-            trailCtx.beginPath();
-            trailCtx.moveTo(e.clientX, e.clientY);
-            
-            // Auto fade
-            clearTimeout(fadeTimer);
-            fadeTimer = setTimeout(() => {
-                trailCtx.clearRect(0, 0, els.canvas.width, els.canvas.height);
-            }, 800);
-        }
-
-        // --- BUTTONS ---
-        els.copyBtn.onclick = () => {
-            els.report.select();
-            navigator.clipboard.writeText(els.report.value);
-            els.copyBtn.textContent = "COPIED!";
+        // --- Initialize Engine ---
+        const config = {
+            tapDelay: 300,
+            swipeThreshold: 30,
+            debug: true
         };
-        els.endBtn.onclick = finish;
 
-        // Start
-        init();
+        const engine = new GestureEngine(touchZone, config, {
+            onGesture: (data) => {
+                console.log("Gesture Detected:", data);
+                
+                let details = "";
+                if (data.meta) {
+                    // Extract interesting meta data for display
+                    const parts = [];
+                    if(data.meta.dir) parts.push(`Dir: ${data.meta.dir}`);
+                    if(data.meta.align) parts.push(`Align: ${data.meta.align}`); // Test Vertical/Diagonal
+                    if(data.meta.winding) parts.push(`Wind: ${data.meta.winding}`); // Test CW/CCW
+                    if(data.meta.subMode) parts.push(`Sub: ${data.meta.subMode}`);
+                    details = parts.length ? `(${parts.join(', ')})` : "";
+                }
+
+                // Flash the screen slightly for spatial tap detection
+                if(data.id.includes('spatial')) {
+                    log(`🎯 <b>${data.name.toUpperCase()}</b> ${details}`, 'spatial');
+                } else {
+                    log(`✨ <b>${data.name.toUpperCase()}</b> ${details}`, 'gesture');
+                }
+            },
+            onContinuous: (data) => {
+                statState.textContent = `State: ${data.type.toUpperCase()}`;
+                
+                let val = "";
+                if(data.type === 'pinch') val = `Scale: ${data.scale.toFixed(2)}`;
+                if(data.type === 'twist') val = `Val: ${data.value}`;
+                if(data.type === 'squiggle') val = `Fingers: ${data.fingers}`;
+
+                log(`🌊 Continuous: ${data.type} [${val}]`, 'continuous');
+            }
+        });
+
+        // --- Settings Controls ---
+        const pTap = document.getElementById('param-tap');
+        const vTap = document.getElementById('val-tap');
+        const pDist = document.getElementById('param-dist');
+        const vDist = document.getElementById('val-dist');
+
+        pTap.oninput = (e) => {
+            config.tapDelay = parseInt(e.target.value);
+            vTap.textContent = config.tapDelay;
+            engine.config.tapDelay = config.tapDelay; // Direct update
+        };
+
+        pDist.oninput = (e) => {
+            config.swipeThreshold = parseInt(e.target.value);
+            vDist.textContent = config.swipeThreshold;
+            engine.config.swipeThreshold = config.swipeThreshold; // Direct update
+        };
+
+        // --- Raw Input Tracking for Visuals ---
+        // The engine handles logic, we handle visuals here
+        touchZone.addEventListener('pointerdown', (e) => {
+            activePaths[e.pointerId] = [{x: e.clientX, y: e.clientY}];
+            statFingers.textContent = `Fingers: ${Object.keys(activePaths).length}`;
+            touchZone.setPointerCapture(e.pointerId);
+        });
+
+        touchZone.addEventListener('pointermove', (e) => {
+            if(activePaths[e.pointerId]) {
+                activePaths[e.pointerId].push({x: e.clientX, y: e.clientY});
+            }
+        });
+
+        const endPointer = (e) => {
+            delete activePaths[e.pointerId];
+            statFingers.textContent = `Fingers: ${Object.keys(activePaths).length}`;
+            if(Object.keys(activePaths).length === 0) statState.textContent = "State: Idle";
+        };
+
+        touchZone.addEventListener('pointerup', endPointer);
+        touchZone.addEventListener('pointercancel', endPointer);
+
+        // --- Inject constraints ---
+        // We want to test EVERYTHING, so we pass a massive list of allowed gestures
+        // This simulates the engine being in a state where it accepts all complex shapes
+        const allPossibleGestures = [
+            'tap', 'double_tap', 'triple_tap', 'long_tap',
+            'tap_2f_any', 'tap_2f_vertical', 'tap_2f_horizontal', 'tap_2f_diagonal_se', 'tap_2f_diagonal_sw',
+            'double_tap_2f_any', 'triple_tap_2f_any', 
+            'swipe_any', 'swipe_up', 'swipe_down', 'swipe_left', 'swipe_right', 'swipe_nw', 'swipe_ne', 'swipe_sw', 'swipe_se',
+            'zigzag_any', 'zigzag_right', 'zigzag_left', 'long_zigzag_any',
+            'boomerang_any', 'boomerang_left', 'boomerang_right',
+            'motion_tap_spatial_any', 'motion_tap_spatial_up', 'motion_tap_spatial_down', 'motion_tap_spatial_left', 'motion_tap_spatial_right',
+            'triple_tap_spatial_line_any', 'triple_tap_spatial_corner_ne', 'triple_tap_spatial_corner_nw'
+        ];
+        
+        // Use the public method to update allowed constraints
+        engine.updateAllowed(allPossibleGestures);
+
+        log("Engine v99 Ready. Constraints loaded.", 'normal');
 
     </script>
 </body>
-</html>
+    </html>
+    
