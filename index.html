@@ -3,229 +3,261 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Gesture Engine Tester</title>
+    <title>Clean Gesture Tester</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        body { touch-action: none; overscroll-behavior: none; background: #111; color: #eee; }
-        #trail-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 50; }
-        .log-item { font-family: monospace; font-size: 0.8rem; border-bottom: 1px solid #333; padding: 4px; }
-        .log-fail { color: #f87171; }
-        .log-pass { color: #4ade80; }
+        body { 
+            background-color: #000; 
+            color: #fff; 
+            overflow: hidden; 
+            touch-action: none; 
+            user-select: none;
+            font-family: 'Inter', sans-serif;
+        }
+        
+        /* The Ghost UI Layer - Clicks pass through this */
+        #ghost-ui {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            pointer-events: none; /* KEY: This lets you swipe through text */
+            z-index: 10;
+        }
+
+        #trail-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 5;
+        }
+
+        .status-bar {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            padding: 10px 20px;
+            display: flex;
+            justify-content: space-between;
+            pointer-events: none; /* Let clicks pass */
+            z-index: 20;
+        }
+
+        /* Buttons need pointer events back */
+        .interactive-btn {
+            pointer-events: auto;
+            cursor: pointer;
+        }
+
+        /* Animations */
+        @keyframes flashGreen { 0% { background: rgba(0,255,0,0.5); } 100% { background: transparent; } }
+        @keyframes flashRed { 0% { background: rgba(255,0,0,0.5); } 100% { background: transparent; } }
+        .flash-pass { animation: flashGreen 0.3s ease-out; }
+        .flash-fail { animation: flashRed 0.3s ease-out; }
     </style>
 </head>
-<body class="h-screen flex flex-col">
+<body id="app-body">
 
-    <div class="p-4 bg-gray-900 border-b border-gray-700 flex justify-between items-center z-10">
-        <div>
-            <h1 class="text-xl font-bold text-blue-500">Gesture Diagnostic</h1>
-            <div class="text-xs text-gray-400">Progress: <span id="progress-lbl">0/0</span></div>
+    <canvas id="trail-canvas"></canvas>
+
+    <div class="status-bar">
+        <div class="text-xs text-gray-500 font-mono">
+            TEST: <span id="progress-display">0/0</span>
         </div>
-        <button id="finish-btn" class="bg-red-900 hover:bg-red-700 text-white px-4 py-2 rounded text-xs font-bold">FINISH & REPORT</button>
+        <button id="end-early-btn" class="interactive-btn bg-red-900/50 hover:bg-red-700 text-white text-[10px] px-2 py-1 rounded border border-red-800">
+            FINISH & REPORT
+        </button>
     </div>
 
-    <div id="test-area" class="flex-grow relative flex flex-col items-center justify-center p-6">
-        <canvas id="trail-canvas"></canvas>
-        
-        <div class="z-10 text-center pointer-events-none">
-            <h2 class="text-gray-500 text-sm uppercase tracking-widest mb-2">Please Perform</h2>
-            <div id="current-gesture-name" class="text-4xl md:text-6xl font-black text-white mb-4 animate-pulse">LOADING...</div>
-            <div id="attempts-lbl" class="text-xl font-bold text-yellow-500">Attempt 1 of 3</div>
-            <div id="feedback-lbl" class="h-8 text-sm mt-2 font-mono text-gray-400">Waiting for input...</div>
+    <div id="ghost-ui">
+        <div id="instruction-label" class="text-gray-600 text-sm uppercase tracking-[0.2em] mb-2">PERFORM</div>
+        <div id="gesture-name" class="text-5xl md:text-7xl font-black text-white/20 text-center px-4 leading-tight transition-all duration-200">
+            LOADING...
         </div>
+        <div id="feedback-sub" class="mt-4 text-xl font-mono text-yellow-500/80 h-6">Attempt 1/3</div>
+        <div id="last-detected" class="mt-2 text-xs font-mono text-gray-600 h-4"></div>
     </div>
 
-    <div class="h-48 bg-gray-800 border-t border-gray-600 overflow-y-auto p-2 z-10" id="log-container">
-        </div>
-
-    <div id="report-modal" class="fixed inset-0 bg-black bg-opacity-95 hidden z-[100] flex items-center justify-center p-4">
-        <div class="bg-gray-900 border border-gray-600 rounded-xl p-6 w-full max-w-2xl h-full max-h-[90vh] flex flex-col">
-            <h2 class="text-2xl font-bold mb-4 text-green-400">Diagnostic Report</h2>
-            <p class="text-sm text-gray-400 mb-2">Copy this report and paste it to the AI.</p>
-            <textarea id="report-text" class="flex-grow bg-black p-4 font-mono text-xs text-green-200 rounded border border-gray-700 resize-none mb-4 focus:outline-none"></textarea>
-            <div class="flex gap-4">
-                <button id="copy-btn" class="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded">COPY TO CLIPBOARD</button>
-                <button onclick="location.reload()" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 rounded">RESTART</button>
-            </div>
+    <div id="report-modal" class="fixed inset-0 bg-black z-50 hidden flex flex-col p-6">
+        <h1 class="text-2xl font-bold text-green-500 mb-2">DIAGNOSTIC REPORT</h1>
+        <p class="text-gray-400 text-xs mb-4">Copy this and give it to the developer.</p>
+        <textarea id="report-output" class="flex-grow bg-gray-900 border border-gray-700 text-green-400 font-mono text-xs p-4 rounded resize-none mb-4 outline-none"></textarea>
+        <div class="flex gap-2 h-12">
+            <button id="copy-btn" class="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded interactive-btn">COPY</button>
+            <button onclick="location.reload()" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-bold rounded interactive-btn">RESTART</button>
         </div>
     </div>
 
     <script type="module">
         import { GestureEngine } from './gestures.js';
 
-        // --- 1. THE COMPLETE GESTURE LIST (Hardcoded from your settings.js) ---
-        const ALL_GESTURES = [
+        // --- THE FULL LIST ---
+        const TEST_QUEUE = [
             // Basics
             'tap', 'double_tap', 'triple_tap', 'long_tap',
-            
-            // Spatial
-            'motion_tap_spatial_any', 'motion_tap_spatial_up', 'motion_tap_spatial_down', 'motion_tap_spatial_left', 'motion_tap_spatial_right',
+
+            // Spatial Taps
+            'motion_tap_spatial_any', 
+            'motion_tap_spatial_up', 'motion_tap_spatial_down', 'motion_tap_spatial_left', 'motion_tap_spatial_right',
             
             // 3-Tap Lines
             'triple_tap_spatial_line_up', 'triple_tap_spatial_line_down', 'triple_tap_spatial_line_left', 'triple_tap_spatial_line_right',
-            
+
             // Corners
             'triple_tap_spatial_corner_ne', 'triple_tap_spatial_corner_nw', 'triple_tap_spatial_corner_se', 'triple_tap_spatial_corner_sw',
-            
-            // Boomerangs
-            'triple_tap_spatial_boomerang_up', 'triple_tap_spatial_boomerang_down', 'triple_tap_spatial_boomerang_left', 'triple_tap_spatial_boomerang_right',
 
-            // Multi-Touch Taps
-            'tap_2f_any', 'double_tap_2f_any', 'triple_tap_2f_any', 'long_tap_2f_any',
-            'tap_3f_any', 'double_tap_3f_any', 'triple_tap_3f_any', 'long_tap_3f_any',
+            // Multi-Touch
+            'tap_2f_any', 'double_tap_2f_any', 'triple_tap_2f_any',
+            'tap_3f_any', 'double_tap_3f_any', 'triple_tap_3f_any',
 
             // Swipes
             'swipe_up', 'swipe_down', 'swipe_left', 'swipe_right',
             'swipe_long_up', 'swipe_long_down', 'swipe_long_left', 'swipe_long_right',
 
-            // Multi-Touch Swipes
+            // Multi-Swipes
             'swipe_up_2f', 'swipe_down_2f', 'swipe_left_2f', 'swipe_right_2f',
             'pinch_swipe_any_2f', 'expand_swipe_any_2f',
-            'swipe_up_3f', 'swipe_down_3f', 'swipe_left_3f', 'swipe_right_3f',
 
             // Shapes
             'boomerang_up', 'boomerang_down', 'boomerang_left', 'boomerang_right',
             'zigzag_up', 'zigzag_down', 'zigzag_left', 'zigzag_right',
             
-            // Complex Shapes
+            // Complex
             'square_cw', 'square_ccw',
-            'triangle_cw', 'triangle_ccw',
-            'u_shape_up_cw', 'u_shape_down_cw'
+            'triangle_cw', 'triangle_ccw'
         ];
 
-        // --- 2. STATE ---
+        // --- STATE ---
         let currentIndex = 0;
-        let attempts = 0;
+        let attempts = 1;
         let results = [];
-        let engine = null;
-        let trailCtx = null;
-        let fadeTimer = null;
+        let engine;
+        let trailCtx;
+        let fadeTimer;
 
-        // --- 3. UI ELEMENTS ---
-        const uiName = document.getElementById('current-gesture-name');
-        const uiAttempts = document.getElementById('attempts-lbl');
-        const uiFeedback = document.getElementById('feedback-lbl');
-        const uiProgress = document.getElementById('progress-lbl');
-        const logContainer = document.getElementById('log-container');
-        const reportModal = document.getElementById('report-modal');
-        const reportText = document.getElementById('report-text');
+        // --- DOM ---
+        const els = {
+            body: document.getElementById('app-body'),
+            name: document.getElementById('gesture-name'),
+            sub: document.getElementById('feedback-sub'),
+            detected: document.getElementById('last-detected'),
+            progress: document.getElementById('progress-display'),
+            canvas: document.getElementById('trail-canvas'),
+            modal: document.getElementById('report-modal'),
+            report: document.getElementById('report-output'),
+            copyBtn: document.getElementById('copy-btn'),
+            endBtn: document.getElementById('end-early-btn')
+        };
 
-        // --- 4. ENGINE INIT ---
+        // --- INIT ---
         function init() {
-            // Setup Visual Trail Canvas
-            const cvs = document.getElementById('trail-canvas');
-            cvs.width = window.innerWidth;
-            cvs.height = window.innerHeight;
-            trailCtx = cvs.getContext('2d');
-            
-            // Initialize Engine
+            // 1. Setup Canvas
+            els.canvas.width = window.innerWidth;
+            els.canvas.height = window.innerHeight;
+            trailCtx = els.canvas.getContext('2d');
+
+            // 2. Setup Engine
             engine = new GestureEngine(document.body, {
                 debug: true,
-                tapDelay: 300, // Matching your default
+                tapDelay: 300,
                 swipeThreshold: 30
             }, {
-                onGesture: handleGesture,
-                onContinuous: (d) => uiFeedback.innerText = `Continuous: ${d.type}`,
+                onGesture: (d) => checkGesture(d),
+                onContinuous: (d) => { /* Ignore continuous for specific tests unless needed */ },
                 onDebug: (msg) => console.log(msg)
             });
 
-            // IMPORTANT: Unblock ALL gestures
-            engine.updateAllowed(ALL_GESTURES);
+            // 3. Unblock all gestures
+            engine.updateAllowed(TEST_QUEUE);
 
-            // Start First Test
-            loadTest();
+            // 4. Start Test
+            loadNext();
 
-            // Trail drawing logic
+            // 5. Drawing Listeners
             document.body.addEventListener('pointermove', drawTrail);
-            document.body.addEventListener('pointerdown', () => {
-                // Clear canvas on new touch
-                trailCtx.clearRect(0,0, cvs.width, cvs.height);
-                clearTimeout(fadeTimer);
-            });
-            document.body.addEventListener('pointerup', () => {
-                // Fade out after a second
-                fadeTimer = setTimeout(() => trailCtx.clearRect(0,0, cvs.width, cvs.height), 1000);
-            });
+            document.body.addEventListener('pointerdown', startTrail);
         }
 
-        function drawTrail(e) {
-            if(e.buttons === 0) return;
-            trailCtx.lineWidth = 5;
-            trailCtx.lineCap = 'round';
-            trailCtx.strokeStyle = 'rgba(74, 222, 128, 0.5)'; // Green
-            trailCtx.lineTo(e.clientX, e.clientY);
-            trailCtx.stroke();
-            trailCtx.beginPath();
-            trailCtx.moveTo(e.clientX, e.clientY);
-        }
-
-        // --- 5. TEST LOGIC ---
-        function loadTest() {
-            if(currentIndex >= ALL_GESTURES.length) {
+        // --- LOGIC ---
+        function loadNext() {
+            if (currentIndex >= TEST_QUEUE.length) {
                 finish();
                 return;
             }
 
-            const g = ALL_GESTURES[currentIndex];
-            uiName.textContent = g.replace(/_/g, ' ').toUpperCase();
-            uiName.className = "text-4xl md:text-6xl font-black text-white mb-4"; // Reset colors
+            const target = TEST_QUEUE[currentIndex];
+            els.name.textContent = target.replace(/_/g, ' ').replace('spatial', '').trim();
+            els.name.style.color = 'rgba(255,255,255,0.2)'; // Reset color
+            
             attempts = 1;
             updateStatus();
-            uiFeedback.textContent = "Waiting...";
-            uiProgress.textContent = `${currentIndex + 1}/${ALL_GESTURES.length}`;
+            els.detected.textContent = "";
+            els.progress.textContent = `${currentIndex + 1}/${TEST_QUEUE.length}`;
         }
 
         function updateStatus() {
-            uiAttempts.textContent = `Attempt ${attempts} of 3`;
-            if(attempts === 1) uiAttempts.className = "text-xl font-bold text-green-500";
-            if(attempts === 2) uiAttempts.className = "text-xl font-bold text-yellow-500";
-            if(attempts === 3) uiAttempts.className = "text-xl font-bold text-red-500";
+            els.sub.textContent = `Attempt ${attempts}/3`;
+            els.sub.style.color = attempts === 1 ? '#4ade80' : (attempts === 2 ? '#facc15' : '#f87171');
         }
 
-        function handleGesture(data) {
-            if(currentIndex >= ALL_GESTURES.length) return;
+        function checkGesture(data) {
+            if (currentIndex >= TEST_QUEUE.length) return;
 
-            const target = ALL_GESTURES[currentIndex];
-            const detected = data.id; // Specific ID from engine
-            const detectedName = data.name; // ID passed back usually
+            const target = TEST_QUEUE[currentIndex];
+            const detectedID = data.id;
 
-            let passed = false;
+            let isMatch = false;
 
-            // --- MATCHING LOGIC ---
-            // 1. Exact Match
-            if (detected === target) passed = true;
+            // 1. Exact
+            if (detectedID === target) isMatch = true;
 
-            // 2. Wildcard Match (Target is "swipe_any", Detected is "swipe_up")
-            if (!passed && target.includes('_any')) {
-                const base = target.replace('_any', ''); // e.g., "tap_2f"
-                if (detected.startsWith(base)) passed = true;
+            // 2. Wildcards (e.g. target="swipe_any", detected="swipe_up" -> PASS)
+            if (!isMatch && target.endsWith('_any')) {
+                const base = target.replace('_any', '');
+                if (detectedID.startsWith(base)) isMatch = true;
             }
 
-            // 3. Reverse Wildcard (Target is "swipe_up", Detected is "swipe_long_up" - usually accept stricter)
-            if (!passed && detected.includes('long') && !target.includes('long')) {
-                 // Allow long swipe to pass normal swipe test
-                 if(detected.replace('long_', '') === target) passed = true;
+            // 3. Relaxed Long Swipes (target="swipe_up", detected="swipe_long_up" -> PASS)
+            if (!isMatch && detectedID.includes('long') && !target.includes('long')) {
+                if (detectedID.replace('long_', '') === target) isMatch = true;
             }
 
-            // --- RESULT HANDLING ---
-            if (passed) {
-                log(`PASS: ${target}`, true);
-                flashScreen('green');
-                results.push({ target: target, result: 'PASS', attempts: attempts });
+            els.detected.textContent = `Saw: ${detectedID}`;
+
+            if (isMatch) {
+                // Success
+                flash('flash-pass');
+                results.push({ target, status: 'PASS', attempts, detected: detectedID });
+                
+                // Visual feedback before moving on
+                els.name.style.color = '#4ade80'; // Green text
+                els.name.textContent = "YES";
+                
                 setTimeout(() => {
                     currentIndex++;
-                    loadTest();
-                }, 500);
+                    loadNext();
+                }, 400);
+
             } else {
-                log(`FAIL: Expected ${target}, Got ${detected}`, false);
-                uiFeedback.textContent = `Detected: ${detected}`;
-                flashScreen('red');
+                // Fail
+                flash('flash-fail');
                 
                 if (attempts >= 3) {
-                    results.push({ target: target, result: 'FAIL', got: detected });
+                    results.push({ target, status: 'FAIL', attempts, detected: detectedID });
+                    
+                    els.name.style.color = '#f87171'; // Red text
+                    els.name.textContent = "SKIP";
+                    
                     setTimeout(() => {
                         currentIndex++;
-                        loadTest();
-                    }, 500);
+                        loadNext();
+                    }, 400);
                 } else {
                     attempts++;
                     updateStatus();
@@ -233,55 +265,71 @@
             }
         }
 
-        function log(msg, success) {
-            const div = document.createElement('div');
-            div.textContent = msg;
-            div.className = `log-item ${success ? 'log-pass' : 'log-fail'}`;
-            logContainer.prepend(div);
+        function flash(className) {
+            els.body.classList.remove('flash-pass', 'flash-fail');
+            void els.body.offsetWidth; // Trigger reflow
+            els.body.classList.add(className);
         }
 
-        function flashScreen(color) {
-            const el = document.getElementById('test-area');
-            const originalBg = ""; // transparent
-            el.style.backgroundColor = color === 'green' ? 'rgba(0,50,0,0.5)' : 'rgba(50,0,0,0.5)';
-            setTimeout(() => el.style.backgroundColor = originalBg, 200);
-        }
-
-        // --- 6. REPORTING ---
         function finish() {
-            reportModal.classList.remove('hidden');
+            els.modal.classList.remove('hidden');
             
-            // Build Report
-            let txt = "GESTURE ENGINE DIAGNOSTIC REPORT\n";
-            txt += "================================\n";
-            txt += `Total Tests: ${results.length}\n`;
-            const passed = results.filter(r => r.result === 'PASS').length;
-            txt += `Passed: ${passed}\n`;
-            txt += `Failed: ${results.length - passed}\n\n`;
+            const passed = results.filter(r => r.status === 'PASS');
+            const failed = results.filter(r => r.status === 'FAIL');
+
+            let txt = `GESTURE REPORT (${Math.round((passed.length / results.length)*100)}% Success)\n`;
+            txt += "----------------------------------------\n";
             
-            txt += "FAILED GESTURES (Details):\n";
-            results.filter(r => r.result === 'FAIL').forEach(r => {
-                txt += `[X] ${r.target} (Detected: ${r.got})\n`;
+            if(failed.length > 0) {
+                txt += "FAILED ITEMS:\n";
+                failed.forEach(f => {
+                    txt += `[X] ${f.target} (Last saw: ${f.detected || 'none'})\n`;
+                });
+                txt += "\n";
+            }
+
+            txt += "PASSED ITEMS:\n";
+            passed.forEach(p => {
+                txt += `[O] ${p.target} (${p.attempts} tries)\n`;
             });
 
-            txt += "\nPASSED GESTURES:\n";
-            results.filter(r => r.result === 'PASS').forEach(r => {
-                txt += `[O] ${r.target} (${r.attempts} attempts)\n`;
-            });
-
-            reportText.value = txt;
+            els.report.value = txt;
         }
 
-        // Button Listeners
-        document.getElementById('finish-btn').onclick = finish;
-        document.getElementById('copy-btn').onclick = () => {
-            reportText.select();
-            navigator.clipboard.writeText(reportText.value);
-            alert("Copied to clipboard!");
+        // --- CANVAS TRAIL ---
+        function startTrail() {
+            trailCtx.clearRect(0, 0, els.canvas.width, els.canvas.height);
+            clearTimeout(fadeTimer);
+        }
+
+        function drawTrail(e) {
+            if (e.buttons === 0) return;
+            trailCtx.lineWidth = 4;
+            trailCtx.lineCap = 'round';
+            trailCtx.strokeStyle = 'rgba(74, 222, 128, 0.6)';
+            trailCtx.lineTo(e.clientX, e.clientY);
+            trailCtx.stroke();
+            trailCtx.beginPath();
+            trailCtx.moveTo(e.clientX, e.clientY);
+            
+            // Auto fade
+            clearTimeout(fadeTimer);
+            fadeTimer = setTimeout(() => {
+                trailCtx.clearRect(0, 0, els.canvas.width, els.canvas.height);
+            }, 800);
+        }
+
+        // --- BUTTONS ---
+        els.copyBtn.onclick = () => {
+            els.report.select();
+            navigator.clipboard.writeText(els.report.value);
+            els.copyBtn.textContent = "COPIED!";
         };
+        els.endBtn.onclick = finish;
 
         // Start
         init();
+
     </script>
 </body>
 </html>
