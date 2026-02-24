@@ -3,79 +3,112 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Android File Merger</title>
+    <title>Merge Files</title>
     <style>
         body { 
-            font-family: sans-serif; 
+            font-family: system-ui, sans-serif; 
+            background: #121212; 
+            color: #e0e0e0; 
             padding: 20px; 
-            text-align: center; 
-            background-color: #f4f4f9;
+            margin: 0;
         }
-        .container {
-            background: white;
-            padding: 30px;
-            border-radius: 10px;
-            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-            max-width: 400px;
-            margin: auto;
-        }
-        button { 
-            margin-top: 20px; 
-            padding: 15px 20px; 
-            font-size: 16px; 
-            background-color: #007bff; 
-            color: white; 
-            border: none; 
+        .container { 
+            background: #1e1e1e; 
+            padding: 20px; 
             border-radius: 8px; 
-            width: 100%;
+            border: 1px solid #333; 
         }
         input[type="file"] { 
-            margin-top: 20px; 
-            width: 100%;
+            display: none; /* Hide default input to use custom button */
+        }
+        .btn { 
+            display: block; 
+            width: 100%; 
+            padding: 15px; 
+            margin: 10px 0; 
+            background: #3700b3; 
+            color: white; 
+            border: none; 
+            border-radius: 4px; 
+            font-size: 16px; 
+            font-weight: bold;
+            text-align: center; 
+            cursor: pointer; 
+            box-sizing: border-box;
+        }
+        .btn-merge { 
+            background: #03dac6; 
+            color: #000; 
+            margin-top: 20px;
+        }
+        #fileList { 
+            margin-top: 15px; 
+            font-size: 14px; 
+            color: #aaa; 
+            white-space: pre-wrap; 
+            word-break: break-all; 
+            background: #000;
+            padding: 10px;
+            border-radius: 4px;
+            min-height: 20px;
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <h2>File Merger</h2>
-        <p>Select multiple text files to combine them into one.</p>
-        <input type="file" id="fileInput" multiple><br>
+        <h2 style="margin-top:0;">File Merger</h2>
         
-        <button onclick="mergeFiles()">Merge & Download</button>
+        <label for="fileInput" class="btn">1. Select Files</label>
+        <input type="file" id="fileInput" multiple accept="*/*">
+        
+        <div id="fileList">No files selected.</div>
+        
+        <button class="btn btn-merge" onclick="mergeAndDownload()">2. Merge & Download</button>
     </div>
 
     <script>
-        async function mergeFiles() {
-            const fileInput = document.getElementById('fileInput');
-            const files = fileInput.files;
+        const fileInput = document.getElementById('fileInput');
+        const fileList = document.getElementById('fileList');
 
+        // Show selected files in the UI
+        fileInput.addEventListener('change', () => {
+            if (fileInput.files.length === 0) {
+                fileList.textContent = "No files selected.";
+                return;
+            }
+            const names = Array.from(fileInput.files).map(f => f.name).join('\n');
+            fileList.textContent = `Selected (${fileInput.files.length} files):\n${names}`;
+        });
+
+        async function mergeAndDownload() {
+            const files = fileInput.files;
             if (files.length === 0) {
-                alert("Please tap 'Choose Files' and select something first!");
+                alert("Please select files first.");
                 return;
             }
 
             let mergedText = "";
 
-            // Loop through all selected files and read their text
-            for (let i = 0; i < files.length; i++) {
-                const file = files[i];
-                const text = await file.text(); 
-                
-                // Add a divider and the file name so you know where each file starts
-                mergedText += `\n\n========================================\n`;
-                mergedText += `--- ${file.name} ---\n`;
-                mergedText += `========================================\n\n`;
-                mergedText += text;
+            for (const file of files) {
+                try {
+                    const text = await file.text();
+                    
+                    // Format the headers as code comments so it doesn't break syntax parsing later
+                    mergedText += `\n/* ========================================\n`;
+                    mergedText += `   FILE: ${file.name}\n`;
+                    mergedText += `   ======================================== */\n\n`;
+                    mergedText += text + '\n';
+                } catch (e) {
+                    alert(`Error reading ${file.name}: ${e.message}`);
+                }
             }
 
-            // Create a downloadable file in the browser
+            // Trigger download
             const blob = new Blob([mergedText], { type: 'text/plain' });
             const url = URL.createObjectURL(blob);
-            
-            // Trigger the Android download manager
             const a = document.createElement('a');
             a.href = url;
-            a.download = "Combined_Files.txt";
+            a.download = "Merged_Code.txt";
             document.body.appendChild(a);
             a.click();
             
