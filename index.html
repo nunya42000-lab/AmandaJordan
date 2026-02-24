@@ -1,36 +1,88 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>File Downloader</title>
-    <style>button { display: block; width: 100%; padding: 20px; margin: 10px 0; font-size: 18px; }</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Android File Merger</title>
+    <style>
+        body { 
+            font-family: sans-serif; 
+            padding: 20px; 
+            text-align: center; 
+            background-color: #f4f4f9;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            max-width: 400px;
+            margin: auto;
+        }
+        button { 
+            margin-top: 20px; 
+            padding: 15px 20px; 
+            font-size: 16px; 
+            background-color: #007bff; 
+            color: white; 
+            border: none; 
+            border-radius: 8px; 
+            width: 100%;
+        }
+        input[type="file"] { 
+            margin-top: 20px; 
+            width: 100%;
+        }
+    </style>
 </head>
 <body>
-    <h2>1. Click these to download:</h2>
-    <button onclick="dl('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/vision_bundle.js', 'vision_bundle.js')">1. Download Bundle.js</button>
-    <button onclick="dl('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm/vision_wasm_internal.js', 'vision_wasm_internal.js')">2. Download Internal.js</button>
-    <button onclick="dl('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm/vision_wasm_internal.wasm', 'vision_wasm_internal.wasm')">3. Download WASM (Binary)</button>
-    <button onclick="dl('https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task', 'gesture_recognizer.task')">4. Download Task (Binary)</button>
+    <div class="container">
+        <h2>File Merger</h2>
+        <p>Select multiple text files to combine them into one.</p>
+        
+        <input type="file" id="fileInput" multiple accept=".txt,text/*"><br>
+        
+        <button onclick="mergeFiles()">Merge & Download</button>
+    </div>
 
     <script>
-        async function dl(url, name) {
-            const btn = event.target;
-            btn.innerText = "Downloading...";
-            try {
-                const response = await fetch(url);
-                const blob = await response.blob();
-                const blobUrl = URL.createObjectURL(blob);
-                const link = document.createElement('a');
-                link.href = blobUrl;
-                link.download = name;
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-                btn.innerText = "✅ Saved " + name;
-                btn.style.backgroundColor = "#ccffcc";
-            } catch (e) {
-                alert("Error: " + e);
-                btn.innerText = "❌ Failed";
+        async function mergeFiles() {
+            const fileInput = document.getElementById('fileInput');
+            const files = fileInput.files;
+
+            if (files.length === 0) {
+                alert("Please tap 'Choose Files' and select something first!");
+                return;
             }
+
+            let mergedText = "";
+
+            // Loop through all selected files and read their text
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+                const text = await file.text(); 
+                
+                // Add a divider and the file name so you know where each file starts
+                mergedText += `\n\n========================================\n`;
+                mergedText += `--- ${file.name} ---\n`;
+                mergedText += `========================================\n\n`;
+                mergedText += text;
+            }
+
+            // Create a downloadable file in the browser
+            const blob = new Blob([mergedText], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            
+            // Trigger the Android download manager
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = "Combined_Files.txt";
+            document.body.appendChild(a);
+            a.click();
+            
+            // Clean up
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
         }
     </script>
 </body>
