@@ -1,21 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-   <link rel="manifest" href="manifest.json">
-
-<script>
-    if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-            navigator.serviceWorker.register('sw.js')
-                .then(reg => console.log('Service Worker registered'))
-                .catch(err => console.error('Service Worker failed', err));
-        });
-    }
-</script>
-    
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Merge Files</title>
+    
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#1e1e1e">
+
     <style>
         body { 
             font-family: system-ui, sans-serif; 
@@ -31,7 +23,7 @@
             border: 1px solid #333; 
         }
         input[type="file"] { 
-            display: none; /* Hide default input to use custom button */
+            display: none; 
         }
         .btn { 
             display: block; 
@@ -63,8 +55,20 @@
             padding: 10px;
             border-radius: 4px;
             min-height: 20px;
+            max-height: 200px;
+            overflow-y: auto;
         }
     </style>
+
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('sw.js')
+                    .then(reg => console.log('Service Worker registered'))
+                    .catch(err => console.error('Service Worker failed', err));
+            });
+        }
+    </script>
 </head>
 <body>
     <div class="container">
@@ -105,7 +109,7 @@
                 try {
                     const text = await file.text();
                     
-                    // Format the headers as code comments so it doesn't break syntax parsing later
+                    // Format the headers as code comments
                     mergedText += `\n/* ========================================\n`;
                     mergedText += `   FILE: ${file.name}\n`;
                     mergedText += `   ======================================== */\n\n`;
