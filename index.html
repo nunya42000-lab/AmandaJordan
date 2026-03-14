@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Smart Code Patcher</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background: #1e1e2e; color: #cdd6f4; padding: 30px; }
+        .container { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        textarea { 
+            width: 100%; height: 500px; background: #313244; color: #a6e3a1; 
+            border: 1px solid #45475a; border-radius: 8px; padding: 10px; font-family: monospace; 
+        }
+        .header { text-align: center; margin-bottom: 20px; }
+        .btn-panel { text-align: center; padding: 20px; background: #181825; border-radius: 12px; margin-bottom: 20px; }
+        button { 
+            background: #f38ba8; border: none; padding: 12px 24px; color: #11111b; 
+            font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 16px;
+        }
+        button:hover { background: #fab387; }
+        label { display: block; margin-bottom: 8px; font-weight: bold; color: #89b4fa; }
+        #status { margin-top: 10px; color: #94e2d5; font-style: italic; }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h1>Smart Code Patcher</h1>
+        <p>Updates functions, variables, and HTML elements by matching their names.</p>
+    </div>
+
+    <div class="btn-panel">
+        <button onclick="runPatch()">Start Code Surgery</button>
+        <div id="status">Waiting for input...</div>
+    </div>
+
+    <div class="container">
+        <div>
+            <label>Your Original App (File 1)</label>
+            <textarea id="file1" placeholder="Paste your PWA code here..."></textarea>
+        </div>
+        <div>
+            <label>New Snippet/App (File 2)</label>
+            <textarea id="file2" placeholder="Paste the new code or snippets here..."></textarea>
+        </div>
+    </div>
+
+<script>
+function findClosingBrace(text, openBraceIndex) {
+    let count = 0;
+    for (let i = openBraceIndex; i < text.length; i++) {
+        if (text[i] === '{') count++;
+        if (text[i] === '}') {
+            count--;
+            if (count === 0) return i;
+        }
+    }
+    return -1;
+}
+
+function runPatch() {
+    let target = document.getElementById('file1').value;
+    const source = document.getElementById('file2').value;
+    const status = document.getElementById('status');
+    
+    if (!target || !source) {
+        status.innerText = "Error: Both boxes need code!";
+        return;
+    }
+
+    let updates = 0;
+    let additions = [];
+
+    // 1. MATCH STANDARD FUNCTIONS: function name() { ... }
+    const funcRegex = /function\s+([a-zA-Z0-9_]+)\s*\(/g;
+    let match;
+
+    while ((match = funcRegex.exec(source)) !== null) {
+        const funcName = match[1];
+        const startIdx = match.index;
+        const openBraceIdx = source.indexOf('{', startIdx);
+        const endBraceIdx = findClosingBrace(source, openBraceIdx);
+
+        if (endBraceIdx !== -1) {
+            const fullNewFunc = source.substring(startIdx, endBraceIdx + 1);
+            const targetRegex = new RegExp(`function\\s+${funcName}\\s*\\([\\s\\S]*?\\)\\s*\\{[\\s\\S]*?\\}`, 'g');
+            
+            // Replaces the standard way of finding functions with bracket-counting for accuracy
+            const targetMatch = target.match(targetRegex);
+            if (targetMatch) {
+                target = target.replace(targetMatch[0], fullNewFunc);
+                updates++;
+            } else {
+                additions.push(fullNewFunc);
+            }
+        }
+    }
+
+    // 2. MATCH HTML IDs: <div id="myId">...</div>
+    const idRegex = /id=["']([^"']+)["']/g;
+    while ((match = idRegex.exec(source)) !== null) {
+        const idName = match[1];
+        // Only try to swap HTML if it looks like a full tag
+        const tagRegex = new RegExp(`<([a-z0-9]+)\\s+[^>]*id=["']${idName}["'][^>]*>([\\s\\S]*?)<\\/\\1>`, 'i');
+        const sourceTagMatch = source.match(tagRegex);
+        const targetTagMatch = target.match(tagRegex);
+
+        if (sourceTagMatch && targetTagMatch) {
+            target = target.replace(targetTagMatch[0], sourceTagMatch[0]);
+            updates++;
+        }
+    }
+
+    // Combine everything
+    if (additions.length > 0) {
+        target += "\n\n/* --- NEW ADAPTED FUNCTIONS --- */\n" + additions.join("\n\n");
+    }
+
+    document.getElementById('file1').value = target;
+    status.innerHTML = `Successfully updated <b>${updates}</b> items and added <b>${additions.length}</b> new snippets.`;
+}
+</script>
+</body>
+</html>
