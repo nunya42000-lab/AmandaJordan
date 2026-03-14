@@ -2,121 +2,124 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Smart Code Patcher</title>
+    <title>Visual Code Patcher</title>
     <style>
-        body { font-family: 'Segoe UI', sans-serif; background: #1e1e2e; color: #cdd6f4; padding: 30px; }
-        .container { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        :root { --bg: #0d1117; --panel: #161b22; --text: #c9d1d9; --accent: #58a6ff; --add: #238636; --remove: #da3633; }
+        body { font-family: -apple-system, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 20px; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px; }
         textarea { 
-            width: 100%; height: 500px; background: #313244; color: #a6e3a1; 
-            border: 1px solid #45475a; border-radius: 8px; padding: 10px; font-family: monospace; 
+            width: 100%; height: 300px; background: var(--panel); color: #7ee787; 
+            border: 1px solid #30363d; border-radius: 6px; padding: 10px; font-family: 'Consolas', monospace; font-size: 12px;
         }
-        .header { text-align: center; margin-bottom: 20px; }
-        .btn-panel { text-align: center; padding: 20px; background: #181825; border-radius: 12px; margin-bottom: 20px; }
+        .diff-view { 
+            background: var(--panel); border: 1px solid #30363d; border-radius: 6px; 
+            padding: 15px; margin-top: 20px; white-space: pre-wrap; font-family: monospace; line-height: 1.5;
+        }
+        .added { background-color: rgba(35, 134, 54, 0.3); color: #aff5b4; display: block; }
+        .removed { background-color: rgba(218, 54, 51, 0.3); color: #ffdcd7; display: block; text-decoration: line-through; }
+        .controls { text-align: center; padding: 20px; background: var(--panel); border-radius: 8px; sticky: top; }
         button { 
-            background: #f38ba8; border: none; padding: 12px 24px; color: #11111b; 
-            font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 16px;
+            background: var(--accent); border: none; padding: 10px 20px; color: white; 
+            font-weight: bold; border-radius: 6px; cursor: pointer; margin: 5px;
         }
-        button:hover { background: #fab387; }
-        label { display: block; margin-bottom: 8px; font-weight: bold; color: #89b4fa; }
-        #status { margin-top: 10px; color: #94e2d5; font-style: italic; }
+        button.secondary { background: #30363d; }
+        h3 { color: var(--accent); margin-top: 0; }
+        .change-tag { font-size: 10px; font-weight: bold; padding: 2px 5px; border-radius: 3px; margin-right: 5px; }
     </style>
 </head>
 <body>
 
-    <div class="header">
-        <h1>Smart Code Patcher</h1>
-        <p>Updates functions, variables, and HTML elements by matching their names.</p>
+    <div class="controls">
+        <h3>Visual Code Patcher</h3>
+        <button onclick="compareAndPreview()">Compare Changes</button>
+        <button class="secondary" id="applyBtn" onclick="applyChanges()" style="display:none;">Apply & Merge All</button>
+        <div id="summary" style="margin-top:10px; font-size: 14px;"></div>
     </div>
 
-    <div class="btn-panel">
-        <button onclick="runPatch()">Start Code Surgery</button>
-        <div id="status">Waiting for input...</div>
+    <div class="grid">
+        <div>
+            <label><b>Original File (Your PWA)</b></label>
+            <textarea id="file1" placeholder="Paste original code..."></textarea>
+        </div>
+        <div>
+            <label><b>New Snippet (Source)</b></label>
+            <textarea id="file2" placeholder="Paste snippet to extract from..."></textarea>
+        </div>
     </div>
 
-    <div class="container">
-        <div>
-            <label>Your Original App (File 1)</label>
-            <textarea id="file1" placeholder="Paste your PWA code here..."></textarea>
-        </div>
-        <div>
-            <label>New Snippet/App (File 2)</label>
-            <textarea id="file2" placeholder="Paste the new code or snippets here..."></textarea>
-        </div>
+    <div id="diffContainer" style="display:none;">
+        <h3>Change Preview</h3>
+        <div id="diffOutput" class="diff-view"></div>
     </div>
 
 <script>
-function findClosingBrace(text, openBraceIndex) {
-    let count = 0;
-    for (let i = openBraceIndex; i < text.length; i++) {
-        if (text[i] === '{') count++;
-        if (text[i] === '}') {
-            count--;
-            if (count === 0) return i;
-        }
+let pendingChanges = "";
+
+function findFunction(code, funcName) {
+    const regex = new RegExp(`function\\s+${funcName}\\s*\\([\\s\\S]*?\\)\\s*\\{`, 'g');
+    const match = regex.exec(code);
+    if (!match) return null;
+    
+    let count = 1;
+    let i = regex.lastIndex;
+    while (count > 0 && i < code.length) {
+        if (code[i] === '{') count++;
+        if (code[i] === '}') count--;
+        i++;
     }
-    return -1;
+    return { start: match.index, end: i, fullText: code.substring(match.index, i) };
 }
 
-function runPatch() {
-    let target = document.getElementById('file1').value;
-    const source = document.getElementById('file2').value;
-    const status = document.getElementById('status');
+function compareAndPreview() {
+    const original = document.getElementById('file1').value;
+    const snippet = document.getElementById('file2').value;
+    const diffOutput = document.getElementById('diffOutput');
+    const summary = document.getElementById('summary');
     
-    if (!target || !source) {
-        status.innerText = "Error: Both boxes need code!";
-        return;
-    }
+    let resultPreview = "";
+    let updatedCode = original;
+    let changeCount = 0;
 
-    let updates = 0;
-    let additions = [];
-
-    // 1. MATCH STANDARD FUNCTIONS: function name() { ... }
+    // Regex to find function names in the snippet
     const funcRegex = /function\s+([a-zA-Z0-9_]+)\s*\(/g;
     let match;
 
-    while ((match = funcRegex.exec(source)) !== null) {
-        const funcName = match[1];
-        const startIdx = match.index;
-        const openBraceIdx = source.indexOf('{', startIdx);
-        const endBraceIdx = findClosingBrace(source, openBraceIdx);
+    while ((match = funcRegex.exec(snippet)) !== null) {
+        const name = match[1];
+        const newFunc = findFunction(snippet, name);
+        const oldFunc = findFunction(original, name);
 
-        if (endBraceIdx !== -1) {
-            const fullNewFunc = source.substring(startIdx, endBraceIdx + 1);
-            const targetRegex = new RegExp(`function\\s+${funcName}\\s*\\([\\s\\S]*?\\)\\s*\\{[\\s\\S]*?\\}`, 'g');
-            
-            // Replaces the standard way of finding functions with bracket-counting for accuracy
-            const targetMatch = target.match(targetRegex);
-            if (targetMatch) {
-                target = target.replace(targetMatch[0], fullNewFunc);
-                updates++;
-            } else {
-                additions.push(fullNewFunc);
+        if (newFunc && oldFunc) {
+            if (newFunc.fullText !== oldFunc.fullText) {
+                resultPreview += `<div class="removed">- OLD ${name}</div>`;
+                resultPreview += `<div class="added">+ NEW ${name} updated</div>\n`;
+                updatedCode = updatedCode.replace(oldFunc.fullText, newFunc.fullText);
+                changeCount++;
             }
+        } else if (newFunc && !oldFunc) {
+            resultPreview += `<div class="added">+ ADDED NEW FUNCTION: ${name}</div>\n`;
+            updatedCode += "\n\n" + newFunc.fullText;
+            changeCount++;
         }
     }
 
-    // 2. MATCH HTML IDs: <div id="myId">...</div>
-    const idRegex = /id=["']([^"']+)["']/g;
-    while ((match = idRegex.exec(source)) !== null) {
-        const idName = match[1];
-        // Only try to swap HTML if it looks like a full tag
-        const tagRegex = new RegExp(`<([a-z0-9]+)\\s+[^>]*id=["']${idName}["'][^>]*>([\\s\\S]*?)<\\/\\1>`, 'i');
-        const sourceTagMatch = source.match(tagRegex);
-        const targetTagMatch = target.match(tagRegex);
-
-        if (sourceTagMatch && targetTagMatch) {
-            target = target.replace(targetTagMatch[0], sourceTagMatch[0]);
-            updates++;
-        }
+    if (changeCount > 0) {
+        diffOutput.innerHTML = resultPreview || "No structural differences found in existing functions.";
+        document.getElementById('diffContainer').style.display = 'block';
+        document.getElementById('applyBtn').style.display = 'inline-block';
+        summary.innerHTML = `Found <b>${changeCount}</b> potential updates. Review them below.`;
+        pendingChanges = updatedCode;
+    } else {
+        summary.innerHTML = "No matching functions found to update.";
+        document.getElementById('applyBtn').style.display = 'none';
     }
+}
 
-    // Combine everything
-    if (additions.length > 0) {
-        target += "\n\n/* --- NEW ADAPTED FUNCTIONS --- */\n" + additions.join("\n\n");
-    }
-
-    document.getElementById('file1').value = target;
-    status.innerHTML = `Successfully updated <b>${updates}</b> items and added <b>${additions.length}</b> new snippets.`;
+function applyChanges() {
+    document.getElementById('file1').value = pendingChanges;
+    document.getElementById('diffContainer').style.display = 'none';
+    document.getElementById('applyBtn').style.display = 'none';
+    document.getElementById('summary').innerHTML = "<b>Applied!</b> File 1 is now updated.";
 }
 </script>
 </body>
