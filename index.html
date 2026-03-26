@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="theme-color" content="#080a0f">
+    <title>DevOS Nexus Prime</title>
+    <link rel="manifest" href="./manifest.json">
+    <link rel="stylesheet" href="./styles.css">
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/localforage/1.10.0/localforage.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.8.0/math.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/diff_match_patch/20121119/diff_match_patch.js"></script>
+    <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
+
+    <script type="module">
+        import { basicSetup } from "https://esm.sh/codemirror@6.0.1";
+        import { EditorView } from "https://esm.sh/@codemirror/view";
+        import { EditorState, Compartment } from "https://esm.sh/@codemirror/state";
+        import { javascript } from "https://esm.sh/@codemirror/lang-javascript";
+        import { html } from "https://esm.sh/@codemirror/lang-html";
+        import { css } from "https://esm.sh/@codemirror/lang-css";
+        import { oneDark } from "https://esm.sh/@codemirror/theme-one-dark";
+
+        window.CM6 = { basicSetup, EditorView, EditorState, Compartment, javascript, html, css, oneDark };
+        window.dispatchEvent(new Event('cm6-ready'));
+    </script>
+</head>
+<body>
+
+    <div id="nexus-app-root">
+        <div id="swipe-overlay"></div>
+
+        <aside id="sidebar" class="sidebar">
+            <div class="sidebar-header">
+                <h2>Nexus Prime</h2>
+                <button onclick="Nexus.toggleSidebar(false)">×</button>
+            </div>
+            <div class="sidebar-scroll">
+                <div class="acc-item">
+                    <div class="acc-head">📄 Explorer <span>▼</span></div>
+                    <div class="acc-body active" id="explorer"></div>
+                </div>
+            </div>
+        </aside>
+
+        <main class="workspace">
+            <div class="toolbar-viewport" id="toolbar-viewport">
+                <div class="toolbar-track" id="toolbar-track">
+                    <button class="tool-btn" id="cmd-btn">[ CMD ]</button>
+                    <button class="tool-btn" onclick="Nexus.toggleSidebar(true)">☰ Menu</button>
+                    <button class="tool-btn btn-blue">⚡ Merge</button>
+                    <button class="tool-btn btn-accent">👁️ Visual</button>
+                    <button class="tool-btn btn-green" onclick="NexusSync.init()">📡 Peer Link</button>
+                    <button class="tool-btn btn-gold">🗄️ Vault</button>
+                </div>
+            </div>
+
+            <div id="editor-wrapper"></div>
+
+            <div id="visual-preview">
+                <button id="preview-kill-btn" onclick="Nexus.killPreview()">🚨 KILL PROCESS</button>
+                <iframe id="preview-frame"></iframe>
+            </div>
+
+            <div id="kb-drawer">
+                <div id="kb-grid"></div>
+            </div>
+
+            <button class="fab fab-left" onclick="Nexus.toggleTerminalPopup()">📜</button>
+            <button class="fab fab-right" onclick="Nexus.toggleKb()">⌨️</button>
+        </main>
+
+        <div id="modal-overlay">
+            <div class="modal-box">
+                <h2 id="modal-title"></h2>
+                <div id="modal-body"></div>
+                <button onclick="Nexus.closeModal()" class="tool-btn btn-red" style="width:100%; margin-top:20px;">Close</button>
+            </div>
+        </div>
+
+        <div id="terminal-zone">
+            <div id="term-out"></div>
+            <div class="term-input">
+                <span>></span>
+                <input type="text" id="term-in" placeholder="Execute JS...">
+            </div>
+        </div>
+    </div>
+
+    <script>
+        /* --- CODE INJECTOR --- */
+        class CodeInjector {
+            static inject(current, patch, label) {
+                const start = `// START: ${label}`, end = `// END: ${label}`;
+                const si = current.indexOf(start), ei = current.indexOf(end);
+                if (si === -1 || ei === -1) return { status: "ERR", content: current };
+                const before = current.substring(0, si + start.length);
+                const after = current.substring(ei);
+                return { status: "SUCCESS", content: `${before}\n${patch}\n${after}` };
+            }
+        }
+
+        /* --- VIRTUAL KEYBOARD --- */
+        window.VirtualKeyboard = {
+            layouts: {
+                js: ['{', '}', '(', ')', ';', '=>', 'import', 'const', 'let', 'async', 'await', '?', ':', '`'],
+                html: ['<', '>', '/', '=', '"', '!', 'div', 'span', 'class', 'id', 'script', 'br']
+            },
+            alpha: "qwertyuiopasdfghjklzxcvbnm".split(""),
+            render(ctx = 'js') {
+                const kb = document.getElementById('kb-grid'); if(!kb) return;
+                kb.innerHTML = '';
+                [...(this.layouts[ctx]||this.layouts.js), ...this.alpha].forEach(k => {
+                    const b = document.createElement('button');
+                    b.innerText = k; b.onclick = () => window.Nexus.type(k);
+                    kb.appendChild(b);
+                });
+            }
+        };
+
+        /* --- SYNC ENGINE --- */
+        window.NexusSync = {
+            peer: null, conn: null,
+            init() {
+                this.peer = new Peer();
+                this.peer.on('open', id => Nexus.log(`ID: ${id}`, "var(--success)"));
+                this.peer.on('connection', c => { this.conn = c; this.listen(); });
+            },
+            listen() {
+                this.conn.on('data', d => {
+                    if(d.type === 'vfs') { Nexus.state.vfs = d.vfs; Nexus.renderExplorer(); }
+                });
+            }
+        };
+
+        /* --- NEXUS CORE --- */
+        window.Nexus = {
+            state: { vfs: {}, activeFile: "main.js", cm: null },
+            boot() {
+                window.addEventListener('cm6-ready', () => { this.initEditor(); this.syncUI(); });
+                this.renderExplorer();
+            },
+            initEditor() {
+                const p = document.getElementById('editor-wrapper');
+                if(this.state.cm) this.state.cm.destroy();
+                this.state.cm = new window.CM6.EditorView({
+                    doc: this.state.vfs[this.state.activeFile] || "// DevOS Nexus Ready\n",
+                    extensions: [window.CM6.basicSetup, window.CM6.oneDark, window.CM6.javascript()],
+                    parent: p
+                });
+            },
+            type(char) {
+                const view = this.state.cm;
+                const {from, to} = view.state.selection.main;
+                view.dispatch({changes: {from, to, insert: char}, selection: {anchor: from + char.length}});
+                view.focus();
+            },
+            log(msg, col = "var(--text)") {
+                const out = document.getElementById('term-out');
+                const d = document.createElement('div');
+                d.style.color = col; d.innerText = `> ${msg}`;
+                out.appendChild(d); out.scrollTop = out.scrollHeight;
+            },
+            toggleSidebar(s) { document.getElementById('sidebar').classList.toggle('active', s); },
+            toggleKb() { 
+                const k = document.getElementById('kb-drawer');
+                k.classList.toggle('active');
+                if(k.classList.contains('active')) window.VirtualKeyboard.render();
+            },
+            toggleTerminalPopup() {
+                const t = document.getElementById('terminal-zone');
+                t.style.display = t.style.display === 'flex' ? 'none' : 'flex';
+            },
+            syncUI() {
+                // Logic to bind tool-buttons based on labels
+                Nexus.log("UI Synchronized", "var(--success)");
+            },
+            renderExplorer() {
+                const ex = document.getElementById('explorer');
+                ex.innerHTML = `<div onclick="Nexus.loadFile('main.js')">main.js</div>`;
+            }
+        };
+
+        window.onload = () => Nexus.boot();
+
+        // Register Service Worker for PWA
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('./service-worker.js');
+        }
+    </script>
+</body>
+</html>
