@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Swiss Army Tool</title>
+    <style>
+        :root {
+            --bg-color: #121212;
+            --panel-color: #1e1e1e;
+            --accent-color: #007aff;
+            --text-color: #e0e0e0;
+            --ribbon-height: 60px;
+        }
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            overflow: hidden;
+        }
+
+        /* --- Ribbon Toolbar --- */
+        .ribbon {
+            height: var(--ribbon-height);
+            background: var(--panel-color);
+            display: flex;
+            align-items: center;
+            overflow-x: auto;
+            white-space: nowrap;
+            border-bottom: 1px solid #333;
+            scrollbar-width: none; /* Firefox */
+        }
+        .ribbon::-webkit-scrollbar { display: none; } /* Chrome/Safari */
+
+        .ribbon button {
+            flex: 0 0 auto;
+            height: 40px;
+            margin: 0 10px;
+            padding: 0 20px;
+            background: #333;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .ribbon button:hover { background: var(--accent-color); }
+        .ribbon button.cmd-btn { background: #444; font-weight: bold; border: 1px solid var(--accent-color); }
+
+        /* --- Main Content Area --- */
+        #content-frame {
+            width: 100%;
+            height: calc(100vh - var(--ribbon-height));
+            border: none;
+            background: #fff; /* Tools usually look better on white unless themed */
+        }
+
+        /* --- Command Prompt (Bottom Slide-up) --- */
+        #cmd-prompt {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 300px;
+            background: #000;
+            transform: translateY(100%);
+            transition: transform 0.3s ease-out;
+            display: flex;
+            flex-direction: column;
+            z-index: 1000;
+            border-top: 2px solid var(--accent-color);
+        }
+        #cmd-prompt.active { transform: translateY(0); }
+        #cmd-output {
+            flex: 1;
+            padding: 10px;
+            font-family: 'Courier New', monospace;
+            overflow-y: auto;
+            color: #0f0;
+        }
+        #cmd-input {
+            background: #111;
+            border: none;
+            border-top: 1px solid #333;
+            color: #0f0;
+            padding: 15px;
+            font-family: 'Courier New', monospace;
+            outline: none;
+        }
+
+        /* --- Side Panels --- */
+        .side-panel {
+            position: fixed;
+            top: var(--ribbon-height);
+            bottom: 0;
+            width: 250px;
+            background: var(--panel-color);
+            transition: transform 0.3s ease;
+            z-index: 900;
+            padding: 20px;
+            box-shadow: 0 0 15px rgba(0,0,0,0.5);
+        }
+        #left-panel { left: 0; transform: translateX(-100%); border-right: 1px solid #333; }
+        #right-panel { right: 0; transform: translateX(100%); border-left: 1px solid #333; }
+        
+        .side-panel.active { transform: translateX(0); }
+
+        /* --- Swipe/Hover Triggers --- */
+        .trigger {
+            position: fixed;
+            top: var(--ribbon-height);
+            bottom: 0;
+            width: 15px;
+            z-index: 950;
+        }
+        #left-trigger { left: 0; }
+        #right-trigger { right: 0; }
+    </style>
+</head>
+<body>
+
+    <div class="ribbon">
+        <button class="cmd-btn" onclick="toggleCMD()">CMD</button>
+        <script>
+            for(let i=1; i<=8; i++) {
+                document.write(`<button onclick="loadTool(${i})">Tool ${i}</button>`);
+            }
+        </script>
+    </div>
+
+    <iframe id="content-frame" src="about:blank"></iframe>
+
+    <div id="cmd-prompt">
+        <div id="cmd-output">System Ready... Type 'help' for options.</div>
+        <input type="text" id="cmd-input" placeholder="Enter command..." onkeydown="handleCmd(event)">
+    </div>
+
+    <div id="left-panel" class="side-panel"><h3>Left Menu</h3><p>Options will go here.</p></div>
+    <div id="right-panel" class="side-panel"><h3>Right Menu</h3><p>Settings will go here.</p></div>
+
+    <div id="left-trigger" class="trigger" onmouseenter="togglePanel('left', true)"></div>
+    <div id="right-trigger" class="trigger" onmouseenter="togglePanel('right', true)"></div>
+
+    <script>
+        function loadTool(id) {
+            document.getElementById('content-frame').src = `tools/${id}.html`;
+        }
+
+        function toggleCMD() {
+            document.getElementById('cmd-prompt').classList.toggle('active');
+            if(document.getElementById('cmd-prompt').classList.contains('active')) {
+                document.getElementById('cmd-input').focus();
+            }
+        }
+
+        function handleCmd(e) {
+            if (e.key === 'Enter') {
+                const input = e.target.value;
+                const output = document.getElementById('cmd-output');
+                output.innerHTML += `<div>> ${input}</div>`;
+                
+                // Simple internal commands
+                if(input === 'clear') output.innerHTML = '';
+                if(input === 'help') output.innerHTML += '<div>Available: clear, help, alert [msg]</div>';
+                if(input.startsWith('alert ')) alert(input.replace('alert ', ''));
+
+                e.target.value = '';
+                output.scrollTop = output.scrollHeight;
+            }
+        }
+
+        function togglePanel(side, show) {
+            const panel = document.getElementById(`${side}-panel`);
+            if (show) {
+                panel.classList.add('active');
+            }
+        }
+
+        // Close panels when clicking the main content or moving mouse away
+        document.getElementById('content-frame').addEventListener('mouseenter', () => {
+            document.getElementById('left-panel').classList.remove('active');
+            document.getElementById('right-panel').classList.remove('active');
+        });
+    </script>
+</body>
+</html>
