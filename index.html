@@ -56,7 +56,7 @@
             width: 100%;
             height: calc(100vh - var(--ribbon-height));
             border: none;
-            background: #fff; /* Tools usually look better on white unless themed */
+            background: #fff;
         }
 
         /* --- Command Prompt (Bottom Slide-up) --- */
@@ -81,6 +81,7 @@
             font-family: 'Courier New', monospace;
             overflow-y: auto;
             color: #0f0;
+            font-size: 14px;
         }
         #cmd-input {
             background: #111;
@@ -89,6 +90,7 @@
             color: #0f0;
             padding: 15px;
             font-family: 'Courier New', monospace;
+            font-size: 14px;
             outline: none;
         }
 
@@ -103,6 +105,7 @@
             z-index: 900;
             padding: 20px;
             box-shadow: 0 0 15px rgba(0,0,0,0.5);
+            box-sizing: border-box;
         }
         #left-panel { left: 0; transform: translateX(-100%); border-right: 1px solid #333; }
         #right-panel { right: 0; transform: translateX(100%); border-left: 1px solid #333; }
@@ -136,7 +139,7 @@
 
     <div id="cmd-prompt">
         <div id="cmd-output">System Ready... Type 'help' for options.</div>
-        <input type="text" id="cmd-input" placeholder="Enter command..." onkeydown="handleCmd(event)">
+        <input type="text" id="cmd-input" placeholder="Enter command or paste script..." autocomplete="off" onkeydown="handleCmd(event)">
     </div>
 
     <div id="left-panel" class="side-panel"><h3>Left Menu</h3><p>Options will go here.</p></div>
@@ -146,65 +149,18 @@
     <div id="right-trigger" class="trigger" onmouseenter="togglePanel('right', true)"></div>
 
     <script>
+        // --- Core UI Functions ---
         function loadTool(id) {
             document.getElementById('content-frame').src = `tools/${id}.html`;
         }
 
         function toggleCMD() {
-            document.getElementById('cmd-prompt').classList.toggle('active');
-            if(document.getElementById('cmd-prompt').classList.contains('active')) {
+            const prompt = document.getElementById('cmd-prompt');
+            prompt.classList.toggle('active');
+            if(prompt.classList.contains('active')) {
                 document.getElementById('cmd-input').focus();
             }
         }
-
-        function handleCmd(e) {
-    if (e.key === 'Enter') {
-        const input = e.target.value.trim();
-        if (!input) return; // Do nothing if the input is empty
-
-        const output = document.getElementById('cmd-output');
-        
-        // 1. Echo the input command to the screen
-        const cmdEcho = document.createElement('div');
-        cmdEcho.style.color = '#fff';
-        cmdEcho.textContent = `> ${input}`;
-        output.appendChild(cmdEcho);
-        
-        // 2. Handle built-in commands
-        if (input === 'clear') {
-            output.innerHTML = 'System Ready... Paste a script or type \'help\'.<br>';
-        } else if (input === 'help') {
-            const helpText = document.createElement('div');
-            helpText.innerHTML = 'Available: <br> - clear: Clears the prompt <br> - help: Shows this message <br> - [Any valid JS]: Pasting JavaScript will execute it immediately.';
-            output.appendChild(helpText);
-        } else {
-            // 3. Execute raw JavaScript
-            try {
-                // Evaluate the pasted script
-                const result = eval(input);
-                
-                // If the script returns a value, display it
-                if (result !== undefined) {
-                    const resultLine = document.createElement('div');
-                    resultLine.style.color = '#aaa';
-                    resultLine.textContent = `< ${String(result)}`;
-                    output.appendChild(resultLine);
-                }
-            } catch (error) {
-                // If the script fails, print the error in red
-                const errorLine = document.createElement('div');
-                errorLine.style.color = '#ff4444';
-                errorLine.textContent = `Error: ${error.message}`;
-                output.appendChild(errorLine);
-            }
-        }
-
-        // 4. Clear the input field and scroll to the bottom
-        e.target.value = '';
-        output.scrollTop = output.scrollHeight;
-    }
-        }
-        
 
         function togglePanel(side, show) {
             const panel = document.getElementById(`${side}-panel`);
@@ -213,11 +169,119 @@
             }
         }
 
-        // Close panels when clicking the main content or moving mouse away
+        // Close panels when interacting with the main iframe
         document.getElementById('content-frame').addEventListener('mouseenter', () => {
             document.getElementById('left-panel').classList.remove('active');
             document.getElementById('right-panel').classList.remove('active');
         });
+
+        // --- Terminal & Bootloader Logic ---
+        let lastSuccessfulCommand = "";
+
+        // Bootloader: Runs automatically when the page loads
+        window.addEventListener('DOMContentLoaded', () => {
+            const scripts = JSON.parse(localStorage.getItem('swissArmyScripts') || '[]');
+            let loadedCount = 0;
+            
+            scripts.forEach((script, index) => {
+                try {
+                    eval(script);
+                    loadedCount++;
+                } catch (e) {
+                    console.error(`Error loading saved script [${index}]:`, e);
+                }
+            });
+
+            if (loadedCount > 0) {
+                const output = document.getElementById('cmd-output');
+                output.innerHTML += `<div style="color:#0aa;">System booted. Loaded ${loadedCount} saved script(s).</div>`;
+            }
+        });
+
+        // CMD Handler
+        function handleCmd(e) {
+            if (e.key === 'Enter') {
+                const input = e.target.value.trim();
+                if (!input) return;
+
+                const output = document.getElementById('cmd-output');
+                
+                // Echo the command
+                const cmdEcho = document.createElement('div');
+                cmdEcho.style.color = '#fff';
+                cmdEcho.textContent = `> ${input}`;
+                output.appendChild(cmdEcho);
+                
+                // Built-in Commands
+                if (input === 'clear') {
+                    output.innerHTML = 'System Ready...<br>';
+                } 
+                else if (input === 'help') {
+                    output.innerHTML += `
+                        <div>Available Commands:</div>
+                        <div>- <b>clear</b>: Clears the terminal</div>
+                        <div>- <b>save</b>: Saves the last executed script permanently</div>
+                        <div>- <b>list</b>: Shows all saved scripts</div>
+                        <div>- <b>remove [index]</b>: Deletes a saved script (e.g., 'remove 0')</div>
+                        <div>- <b>help</b>: Shows this message</div>
+                    `;
+                }
+                else if (input === 'save') {
+                    if (lastSuccessfulCommand) {
+                        const scripts = JSON.parse(localStorage.getItem('swissArmyScripts') || '[]');
+                        scripts.push(lastSuccessfulCommand);
+                        localStorage.setItem('swissArmyScripts', JSON.stringify(scripts));
+                        output.innerHTML += '<div style="color:#0f0;">> Success: Previous script saved to bootloader!</div>';
+                    } else {
+                        output.innerHTML += '<div style="color:#ff4444;">> Error: No recent successful script to save.</div>';
+                    }
+                }
+                else if (input === 'list') {
+                    const scripts = JSON.parse(localStorage.getItem('swissArmyScripts') || '[]');
+                    if (scripts.length === 0) {
+                        output.innerHTML += '<div style="color:#aaa;">> No scripts currently saved.</div>';
+                    } else {
+                        scripts.forEach((s, i) => {
+                            output.innerHTML += `<div style="color:#aaa;">[${i}] ${s.substring(0, 40)}...</div>`;
+                        });
+                    }
+                }
+                else if (input.startsWith('remove ')) {
+                    const index = parseInt(input.split(' ')[1]);
+                    const scripts = JSON.parse(localStorage.getItem('swissArmyScripts') || '[]');
+                    if (!isNaN(index) && index >= 0 && index < scripts.length) {
+                        scripts.splice(index, 1);
+                        localStorage.setItem('swissArmyScripts', JSON.stringify(scripts));
+                        output.innerHTML += `<div style="color:#0f0;">> Script [${index}] removed. Reload page to apply.</div>`;
+                    } else {
+                        output.innerHTML += '<div style="color:#ff4444;">> Error: Invalid script index. Check the "list" command.</div>';
+                    }
+                }
+                else {
+                    // Execute Raw JavaScript
+                    try {
+                        const result = eval(input);
+                        lastSuccessfulCommand = input; // Capture for the 'save' command
+                        
+                        if (result !== undefined) {
+                            const resultLine = document.createElement('div');
+                            resultLine.style.color = '#aaa';
+                            resultLine.textContent = `< ${String(result)}`;
+                            output.appendChild(resultLine);
+                        }
+                    } catch (error) {
+                        const errorLine = document.createElement('div');
+                        errorLine.style.color = '#ff4444';
+                        errorLine.textContent = `Error: ${error.message}`;
+                        output.appendChild(errorLine);
+                    }
+                }
+
+                // Clean up UI
+                e.target.value = '';
+                output.scrollTop = output.scrollHeight;
+            }
+        }
     </script>
 </body>
 </html>
