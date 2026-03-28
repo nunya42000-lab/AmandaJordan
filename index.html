@@ -158,20 +158,53 @@
         }
 
         function handleCmd(e) {
-            if (e.key === 'Enter') {
-                const input = e.target.value;
-                const output = document.getElementById('cmd-output');
-                output.innerHTML += `<div>> ${input}</div>`;
-                
-                // Simple internal commands
-                if(input === 'clear') output.innerHTML = '';
-                if(input === 'help') output.innerHTML += '<div>Available: clear, help, alert [msg]</div>';
-                if(input.startsWith('alert ')) alert(input.replace('alert ', ''));
+    if (e.key === 'Enter') {
+        const input = e.target.value.trim();
+        if (!input) return; // Do nothing if the input is empty
 
-                e.target.value = '';
-                output.scrollTop = output.scrollHeight;
+        const output = document.getElementById('cmd-output');
+        
+        // 1. Echo the input command to the screen
+        const cmdEcho = document.createElement('div');
+        cmdEcho.style.color = '#fff';
+        cmdEcho.textContent = `> ${input}`;
+        output.appendChild(cmdEcho);
+        
+        // 2. Handle built-in commands
+        if (input === 'clear') {
+            output.innerHTML = 'System Ready... Paste a script or type \'help\'.<br>';
+        } else if (input === 'help') {
+            const helpText = document.createElement('div');
+            helpText.innerHTML = 'Available: <br> - clear: Clears the prompt <br> - help: Shows this message <br> - [Any valid JS]: Pasting JavaScript will execute it immediately.';
+            output.appendChild(helpText);
+        } else {
+            // 3. Execute raw JavaScript
+            try {
+                // Evaluate the pasted script
+                const result = eval(input);
+                
+                // If the script returns a value, display it
+                if (result !== undefined) {
+                    const resultLine = document.createElement('div');
+                    resultLine.style.color = '#aaa';
+                    resultLine.textContent = `< ${String(result)}`;
+                    output.appendChild(resultLine);
+                }
+            } catch (error) {
+                // If the script fails, print the error in red
+                const errorLine = document.createElement('div');
+                errorLine.style.color = '#ff4444';
+                errorLine.textContent = `Error: ${error.message}`;
+                output.appendChild(errorLine);
             }
         }
+
+        // 4. Clear the input field and scroll to the bottom
+        e.target.value = '';
+        output.scrollTop = output.scrollHeight;
+    }
+        }
+        
 
         function togglePanel(side, show) {
             const panel = document.getElementById(`${side}-panel`);
