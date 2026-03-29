@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PWA Nexus Bundler</title>
+    <style>
+        :root { --bg: #0f172a; --text: #f1f5f9; --accent: #38bdf8; }
+        body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); padding: 2rem; display: flex; flex-direction: column; align-items: center; }
+        .container { max-width: 800px; width: 100%; background: #1e293b; padding: 2rem; border-radius: 1rem; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.5); }
+        button { background: var(--accent); color: #000; border: none; padding: 0.75rem 1.5rem; border-radius: 0.5rem; font-weight: bold; cursor: pointer; transition: opacity 0.2s; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        #fileList { margin: 1rem 0; max-height: 300px; overflow-y: auto; background: #00000044; padding: 1rem; border-radius: 0.5rem; font-size: 0.8rem; }
+        .status { margin-top: 1rem; color: #94a3b8; }
+        .file-item { display: flex; justify-content: space-between; padding: 0.2rem 0; border-bottom: 1px solid #ffffff11; }
+        .tree-shaken { color: #f87171; text-decoration: line-through; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>PWA Monolith Generator</h2>
+    <p>Import your project folder to merge all logic, styles, and assets into one file.</p>
+    
+    <div style="display: flex; gap: 10px;">
+        <button id="importBtn">Import Project Folder</button>
+        <button id="bundleBtn" disabled>Generate Single File</button>
+    </div>
+
+    <div id="status" class="status">Ready.</div>
+    <div id="fileList"></div>
+</div>
+
+<script>
+    let vfs = {}; // Virtual File System
+    const importBtn = document.getElementById('importBtn');
+    const bundleBtn = document.getElementById('bundleBtn');
+    const status = document.getElementById('status');
+    const fileList = document.getElementById('fileList');
+
+    // Tree-shaking exclusion list (common junk)
+    const blackList = ['.git', 'node_modules', '.vscode', 'DS_Store', 'README.md', '.gitignore'];
+
+    importBtn.addEventListener('click', async () => {
+        try {
+            const dirHandle = await window.showDirectoryPicker();
+            vfs = {};
+            fileList.innerHTML = '';
+            status.innerText = "Reading directory...";
+            await scanDirectory(dirHandle);
+            status.innerText = `Imported ${Object.keys(vfs).length} files.`;
+            bundleBtn.disabled = false;
+        } catch (err) {
+            status.innerText = "Import cancelled or failed.";
+        }
+    });
+
+    async function scanDirectory(handle, path = '') {
+        for await (const entry of handle.values()) {
+            if (blackList.some(b => entry.name.includes(b))) continue;
+
+            const entryPath = path ? `${path}/${entry.name}` : entry.name;
+            if (entry.kind === 'directory') {
+                await scanDirectory(entry, entryPath);
+            } else {
+                const file = await entry.getFile();
+                const content = await readFile(file);
+                vfs[entryPath] = {
+                    content,
+                    type: file.type,
+                    name: entry.name,
+                    path: entryPath
+                };
+                renderFile(entryPath);
+            }
+        }
+    }
+
+    function readFile(file) {
+        return new Promise((resolve) => {
+            const reader = new FileReader();
+            if (file.type.startsWith('image/') || file.type.includes('font')) {
+                reader.onload = () => resolve(reader.result);
+                reader.readAsDataURL(file);
+            } else {
+                reader.onload = () => resolve(reader.result);
+                reader.readAsText(file);
+            }
+        });
+    }
+
+    function renderFile(path) {
+        const div = document.createElement('div');
+        div.className = 'file-item';
+        div.innerHTML = `<span>${path}</span><span style="color:var(--accent)">Stored</span>`;
+        fileList.appendChild(div);
+    }
+
+    bundleBtn.addEventListener('click', () => {
+        status.innerText = "Bundling...";
+        const mainHtmlPath = Object.keys(vfs).find(p => p.endsWith('index.html')) || Object.keys(vfs)[0];
+        
+        if (!mainHtmlPath) {
+            alert("No HTML file found to use as entry point.");
+            return;
+        }
+
+        let bundle = vfs[mainHtmlPath].content;
+        const baseDir = mainHtmlPath.substring(0, mainHtmlPath.lastIndexOf('/')) || '';
+
+        // 1. Inline Stylesheets
+        bundle = bundle.replace(/<link.*rel=["']stylesheet["'].*href=["'](.*?)["'].*?>/g, (match, href) => {
+            const fullPath = resolvePath(baseDir, href);
+            if (vfs[fullPath]) {
+                return `<style>\n/* Inlined: ${href} */\n${vfs[fullPath].content}\n</style>`;
+            }
+            return match;
+        });
+
+        // 2. Inline Scripts
+        bundle = bundle.replace(/<script.*src=["'](.*?)["'].*?><\/script>/g, (match, src) => {
+            const fullPath = resolvePath(baseDir, src);
+            if (vfs[fullPath]) {
+                return `<script>\n/* Inlined: ${src} */\n${vfs[fullPath].content}\n<\/script>`;
+            }
+            return match;
+        });
+
+        // 3. Asset Replacement (Images in HTML)
+        bundle = bundle.replace(/<img.*src=["'](.*?)["'].*?>/g, (match, src) => {
+            const fullPath = resolvePath(baseDir, src);
+            if (vfs[fullPath] && typeof vfs[fullPath].content === 'string' && vfs[fullPath].content.startsWith('data:')) {
+                return match.replace(src, vfs[fullPath].content);
+            }
+            return match;
+        });
+
+        downloadBundle(bundle);
+        status.innerText = "Bundle complete! Downloaded.";
+    });
+
+    function resolvePath(base, relative) {
+        if (relative.startsWith('http')) return relative;
+        const stack = base ? base.split('/') : [];
+        const parts = relative.split('/');
+        for (const part of parts) {
+            if (part === '.') continue;
+            if (part === '..') stack.pop();
+            else stack.push(part);
+        }
+        return stack.join('/');
+    }
+
+    function downloadBundle(content) {
+        const blob = new Blob([content], { type: 'text/html' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'pwa-monolith.html';
+        a.click();
+    }
+</script>
+
+</body>
+</html>
