@@ -5,165 +5,142 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Nexus Monolith Bundler</title>
     <style>
-        :root { --bg: #0b0e14; --panel: #161b22; --accent: #58a6ff; --text: #c9d1d9; --success: #3fb950; }
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); display: flex; justify-content: center; padding: 40px; margin: 0; }
-        .card { background: var(--panel); border: 1px solid #30363d; border-radius: 12px; width: 100%; max-width: 650px; padding: 30px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
-        h1 { font-size: 22px; margin-top: 0; color: white; }
-        p { color: #8b949e; font-size: 14px; margin-bottom: 25px; }
-        
-        .upload-area { border: 2px dashed #30363d; border-radius: 8px; padding: 40px; text-align: center; cursor: pointer; transition: 0.2s; position: relative; }
-        .upload-area:hover { border-color: var(--accent); background: #1f242c; }
-        input[type="file"] { position: absolute; width: 100%; height: 100%; top: 0; left: 0; opacity: 0; cursor: pointer; }
-
-        .controls { display: flex; gap: 15px; margin-top: 20px; }
-        button { flex: 1; padding: 12px; border-radius: 6px; border: none; font-weight: 600; cursor: pointer; background: var(--accent); color: white; transition: 0.2s; }
-        button:disabled { background: #21262d; color: #484f58; cursor: not-allowed; }
-        
-        #log { margin-top: 20px; background: #010409; border-radius: 6px; padding: 15px; font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace; font-size: 12px; height: 180px; overflow-y: auto; border: 1px solid #30363d; }
-        .log-entry { margin-bottom: 4px; border-bottom: 1px solid #ffffff05; padding-bottom: 2px; }
-        .green { color: var(--success); }
+        :root { --bg: #0d1117; --card: #161b22; --accent: #238636; --text: #c9d1d9; }
+        body { font-family: -apple-system, system-ui, sans-serif; background: var(--bg); color: var(--text); display: flex; justify-content: center; padding: 20px; }
+        .container { background: var(--card); border: 1px solid #30363d; border-radius: 8px; max-width: 600px; width: 100%; padding: 30px; }
+        h1 { font-size: 20px; color: white; margin-bottom: 8px; }
+        .drop-zone { border: 2px dashed #30363d; border-radius: 6px; padding: 40px; text-align: center; cursor: pointer; margin: 20px 0; transition: 0.3s; }
+        .drop-zone:hover { border-color: #58a6ff; background: #1f242c; }
+        #fileInput { display: none; }
+        button { background: var(--accent); color: white; border: none; padding: 12px 24px; border-radius: 6px; font-weight: 600; cursor: pointer; width: 100%; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        #status { margin-top: 15px; font-family: monospace; font-size: 12px; color: #8b949e; height: 100px; overflow-y: auto; background: #010409; padding: 10px; border-radius: 4px; }
     </style>
 </head>
 <body>
 
-<div class="card">
-    <h1>PWA Nexus Bundler</h1>
-    <p>Select your PWA project folder. It will merge all JS, CSS, and Assets into one "pwa-monolith.html".</p>
+<div class="container">
+    <h1>Nexus Monolith Bundler</h1>
+    <p>Merge a multi-module PWA into one functional HTML file.</p>
 
-    <div class="upload-area" id="dropZone">
-        <span id="dropText">Click or Drag Folder Here</span>
-        <input type="file" id="folderInput" webkitdirectory directory multiple>
+    <div class="drop-zone" onclick="document.getElementById('fileInput').click()">
+        <span id="label">Click to select your PWA project folder</span>
+        <input type="file" id="fileInput" webkitdirectory directory multiple>
     </div>
 
-    <div class="controls">
-        <button id="bundleBtn" disabled>Generate Monolith</button>
-    </div>
-
-    <div id="log">Waiting for input...</div>
+    <button id="bundleBtn" disabled>Generate Monolith</button>
+    <div id="status">Ready...</div>
 </div>
 
 <script>
-    const folderInput = document.getElementById('folderInput');
+    const fileInput = document.getElementById('fileInput');
     const bundleBtn = document.getElementById('bundleBtn');
-    const logEl = document.getElementById('log');
-    const dropText = document.getElementById('dropText');
+    const status = document.getElementById('status');
+    const label = document.getElementById('label');
 
-    let vfs = {}; // Virtual File System object
+    let projectVFS = {};
 
-    const writeLog = (msg, isSuccess = false) => {
-        const div = document.createElement('div');
-        div.className = 'log-entry' + (isSuccess ? ' green' : '');
-        div.innerText = `> ${msg}`;
-        logEl.appendChild(div);
-        logEl.scrollTop = logEl.scrollHeight;
-    };
-
-    // 1. Handle Folder Import
-    folderInput.addEventListener('change', async (e) => {
+    fileInput.onchange = async (e) => {
         const files = Array.from(e.target.files);
-        if (files.length === 0) return;
+        if (!files.length) return;
 
-        vfs = {};
-        logEl.innerHTML = '';
-        writeLog(`Scanning ${files.length} files...`);
+        projectVFS = {};
+        status.innerHTML = "Indexing files...<br>";
 
         for (const file of files) {
-            // Tree Shaking: Ignore git, modules, and system junk
-            if (file.webkitRelativePath.includes('.git/') || 
-                file.webkitRelativePath.includes('node_modules/') || 
-                file.name.startsWith('.')) continue;
+            // Shake the tree: ignore junk
+            if (file.webkitRelativePath.includes('node_modules') || file.name.startsWith('.')) continue;
 
-            const path = file.webkitRelativePath.split('/').slice(1).join('/'); // Remove root folder name
+            const path = file.webkitRelativePath.split('/').slice(1).join('/');
             const isBinary = file.type.startsWith('image/') || file.type.includes('font') || file.type.includes('icon');
-
+            
             if (isBinary) {
-                vfs[path] = { content: await toBase64(file), type: file.type, isBinary: true };
+                projectVFS[path] = { content: await toBase64(file), type: file.type, binary: true };
             } else {
-                vfs[path] = { content: await file.text(), type: file.type, isBinary: false };
+                projectVFS[path] = { content: await file.text(), type: file.type, binary: false };
             }
-            writeLog(`Indexed: ${path}`);
+            status.innerHTML += `Added: ${path}<br>`;
+            status.scrollTop = status.scrollHeight;
         }
 
-        dropText.innerText = `${Object.keys(vfs).length} Files Imported`;
+        label.innerText = `${Object.keys(projectVFS).length} files loaded.`;
         bundleBtn.disabled = false;
-        writeLog(`Import Complete. Ready to merge.`, true);
-    });
+    };
 
-    const toBase64 = file => new Promise(res => {
+    const toBase64 = f => new Promise(res => {
         const r = new FileReader();
         r.onload = () => res(r.result);
-        r.readAsDataURL(file);
+        r.readAsDataURL(f);
     });
 
-    // 2. The Merging Engine
     bundleBtn.onclick = () => {
-        writeLog("Starting Monolith Construction...");
-        
-        // Find index.html
-        const entryKey = Object.keys(vfs).find(k => k.toLowerCase() === 'index.html') || Object.keys(vfs)[0];
-        let html = vfs[entryKey].content;
+        const entryPoint = Object.keys(projectVFS).find(k => k.toLowerCase() === 'index.html');
+        if (!entryPoint) return alert("index.html not found!");
 
-        // VFS SHIM: Injected at the top of <head> to handle internal fetch/resource loading
-        const vfsShim = `
+        // The Magic Bootstrapper
+        const bootstrapper = `
 <script>
-    window._NEXUS_VFS = ${JSON.stringify(vfs)};
-    
-    // Intercept Fetch calls so your PWA logic still works
-    const _origFetch = window.fetch;
-    window.fetch = async (input, init) => {
-        const url = input.toString().split('/').pop(); // Simple name matching for VFS
-        if (window._NEXUS_VFS[url]) {
-            console.log('Nexus VFS Hit:', url);
-            const file = window._NEXUS_VFS[url];
-            const responseData = file.isBinary ? await (await _origFetch(file.content)).blob() : file.content;
-            return new Response(responseData, { headers: { 'Content-Type': file.type } });
+(async function() {
+    window._VFS = ${JSON.stringify(projectVFS)};
+    const blobMap = new Map();
+
+    // 1. Convert VFS strings/base64 into actual Blobs/URLs
+    for (const [path, file] of Object.entries(window._VFS)) {
+        let blob;
+        if (file.binary) {
+            const res = await fetch(file.content);
+            blob = await res.blob();
+        } else {
+            blob = new Blob([file.content], { type: file.type });
         }
-        return _origFetch(input, init);
+        blobMap.set(path, URL.createObjectURL(blob));
+    }
+
+    // 2. Intercept Fetch
+    const _fetch = window.fetch;
+    window.fetch = async (url, init) => {
+        const path = url.toString().replace(window.location.origin + '/', '');
+        if (blobMap.has(path)) return _fetch(blobMap.get(path));
+        return _fetch(url, init);
     };
 
-    // Auto-update broken paths in the DOM
-    document.addEventListener('DOMContentLoaded', () => {
-        document.querySelectorAll('[src], [href]').forEach(el => {
-            const attr = el.hasAttribute('src') ? 'src' : 'href';
-            const path = el.getAttribute(attr);
-            if (window._NEXUS_VFS[path]) el[attr] = window._NEXUS_VFS[path].content;
+    // 3. Update DOM (Images, Scripts, Links)
+    function syncDOM() {
+        document.querySelectorAll('[src], [href], [data-src]').forEach(el => {
+            ['src', 'href', 'data-src'].forEach(attr => {
+                if (el.hasAttribute(attr)) {
+                    const original = el.getAttribute(attr);
+                    if (blobMap.has(original)) el[attr] = blobMap.get(original);
+                }
+            });
         });
-    });
+    }
+
+    // 4. Handle Modules (Dynamic Imports)
+    // We rewrite the DOM entry point to start the app
+    const observer = new MutationObserver(syncDOM);
+    observer.observe(document.documentElement, { subtree: true, attributes: true });
+    
+    window.addEventListener('DOMContentLoaded', syncDOM);
+})();
 <\/script>`;
 
-        html = html.replace('<head>', '<head>' + vfsShim);
+        let finalHtml = projectVFS[entryPoint].content;
+        
+        // Inject the bootstrapper at the top of the head
+        if (finalHtml.includes('<head>')) {
+            finalHtml = finalHtml.replace('<head>', '<head>' + bootstrapper);
+        } else {
+            finalHtml = bootstrapper + finalHtml;
+        }
 
-        // Inline CSS
-        html = html.replace(/<link.*rel=["']stylesheet["'].*href=["'](.*?)["'].*?>/g, (match, href) => {
-            const fileName = href.split('/').pop();
-            return vfs[fileName] ? `<style>\n/* Inlined ${fileName} */\n${vfs[fileName].content}\n</style>` : match;
-        });
-
-        // Inline JS
-        html = html.replace(/<script.*src=["'](.*?)["'].*?><\/script>/g, (match, src) => {
-            const fileName = src.split('/').pop();
-            return vfs[fileName] ? `<script>\n/* Inlined ${fileName} */\n${vfs[fileName].content}\n<\/script>` : match;
-        });
-
-        // Process Base64 for internal images in HTML
-        Object.keys(vfs).forEach(key => {
-            if (vfs[key].isBinary) {
-                html = html.split(key).join(vfs[key].content);
-            }
-        });
-
-        download(html);
-        writeLog("Monolith Generated! Check your downloads.", true);
-    };
-
-    function download(content) {
-        const blob = new Blob([content], { type: 'text/html' });
+        const blob = new Blob([finalHtml], { type: 'text/html' });
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
         a.download = 'pwa-monolith.html';
         a.click();
-    }
+        status.innerHTML += "<br><b>Success! Monolith downloaded.</b>";
+    };
 </script>
-
 </body>
 </html>
