@@ -3,159 +3,163 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PWA Nexus Bundler</title>
+    <title>Nexus Monolith Bundler</title>
     <style>
-        :root { --bg: #0f172a; --text: #f1f5f9; --accent: #38bdf8; }
-        body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); padding: 2rem; display: flex; flex-direction: column; align-items: center; }
-        .container { max-width: 800px; width: 100%; background: #1e293b; padding: 2rem; border-radius: 1rem; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.5); }
-        button { background: var(--accent); color: #000; border: none; padding: 0.75rem 1.5rem; border-radius: 0.5rem; font-weight: bold; cursor: pointer; transition: opacity 0.2s; }
-        button:disabled { opacity: 0.5; cursor: not-allowed; }
-        #fileList { margin: 1rem 0; max-height: 300px; overflow-y: auto; background: #00000044; padding: 1rem; border-radius: 0.5rem; font-size: 0.8rem; }
-        .status { margin-top: 1rem; color: #94a3b8; }
-        .file-item { display: flex; justify-content: space-between; padding: 0.2rem 0; border-bottom: 1px solid #ffffff11; }
-        .tree-shaken { color: #f87171; text-decoration: line-through; }
+        :root { --bg: #0b0e14; --panel: #161b22; --accent: #58a6ff; --text: #c9d1d9; --success: #3fb950; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); display: flex; justify-content: center; padding: 40px; margin: 0; }
+        .card { background: var(--panel); border: 1px solid #30363d; border-radius: 12px; width: 100%; max-width: 650px; padding: 30px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        h1 { font-size: 22px; margin-top: 0; color: white; }
+        p { color: #8b949e; font-size: 14px; margin-bottom: 25px; }
+        
+        .upload-area { border: 2px dashed #30363d; border-radius: 8px; padding: 40px; text-align: center; cursor: pointer; transition: 0.2s; position: relative; }
+        .upload-area:hover { border-color: var(--accent); background: #1f242c; }
+        input[type="file"] { position: absolute; width: 100%; height: 100%; top: 0; left: 0; opacity: 0; cursor: pointer; }
+
+        .controls { display: flex; gap: 15px; margin-top: 20px; }
+        button { flex: 1; padding: 12px; border-radius: 6px; border: none; font-weight: 600; cursor: pointer; background: var(--accent); color: white; transition: 0.2s; }
+        button:disabled { background: #21262d; color: #484f58; cursor: not-allowed; }
+        
+        #log { margin-top: 20px; background: #010409; border-radius: 6px; padding: 15px; font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace; font-size: 12px; height: 180px; overflow-y: auto; border: 1px solid #30363d; }
+        .log-entry { margin-bottom: 4px; border-bottom: 1px solid #ffffff05; padding-bottom: 2px; }
+        .green { color: var(--success); }
     </style>
 </head>
 <body>
 
-<div class="container">
-    <h2>PWA Monolith Generator</h2>
-    <p>Import your project folder to merge all logic, styles, and assets into one file.</p>
-    
-    <div style="display: flex; gap: 10px;">
-        <button id="importBtn">Import Project Folder</button>
-        <button id="bundleBtn" disabled>Generate Single File</button>
+<div class="card">
+    <h1>PWA Nexus Bundler</h1>
+    <p>Select your PWA project folder. It will merge all JS, CSS, and Assets into one "pwa-monolith.html".</p>
+
+    <div class="upload-area" id="dropZone">
+        <span id="dropText">Click or Drag Folder Here</span>
+        <input type="file" id="folderInput" webkitdirectory directory multiple>
     </div>
 
-    <div id="status" class="status">Ready.</div>
-    <div id="fileList"></div>
+    <div class="controls">
+        <button id="bundleBtn" disabled>Generate Monolith</button>
+    </div>
+
+    <div id="log">Waiting for input...</div>
 </div>
 
 <script>
-    let vfs = {}; // Virtual File System
-    const importBtn = document.getElementById('importBtn');
+    const folderInput = document.getElementById('folderInput');
     const bundleBtn = document.getElementById('bundleBtn');
-    const status = document.getElementById('status');
-    const fileList = document.getElementById('fileList');
+    const logEl = document.getElementById('log');
+    const dropText = document.getElementById('dropText');
 
-    // Tree-shaking exclusion list (common junk)
-    const blackList = ['.git', 'node_modules', '.vscode', 'DS_Store', 'README.md', '.gitignore'];
+    let vfs = {}; // Virtual File System object
 
-    importBtn.addEventListener('click', async () => {
-        try {
-            const dirHandle = await window.showDirectoryPicker();
-            vfs = {};
-            fileList.innerHTML = '';
-            status.innerText = "Reading directory...";
-            await scanDirectory(dirHandle);
-            status.innerText = `Imported ${Object.keys(vfs).length} files.`;
-            bundleBtn.disabled = false;
-        } catch (err) {
-            status.innerText = "Import cancelled or failed.";
-        }
-    });
-
-    async function scanDirectory(handle, path = '') {
-        for await (const entry of handle.values()) {
-            if (blackList.some(b => entry.name.includes(b))) continue;
-
-            const entryPath = path ? `${path}/${entry.name}` : entry.name;
-            if (entry.kind === 'directory') {
-                await scanDirectory(entry, entryPath);
-            } else {
-                const file = await entry.getFile();
-                const content = await readFile(file);
-                vfs[entryPath] = {
-                    content,
-                    type: file.type,
-                    name: entry.name,
-                    path: entryPath
-                };
-                renderFile(entryPath);
-            }
-        }
-    }
-
-    function readFile(file) {
-        return new Promise((resolve) => {
-            const reader = new FileReader();
-            if (file.type.startsWith('image/') || file.type.includes('font')) {
-                reader.onload = () => resolve(reader.result);
-                reader.readAsDataURL(file);
-            } else {
-                reader.onload = () => resolve(reader.result);
-                reader.readAsText(file);
-            }
-        });
-    }
-
-    function renderFile(path) {
+    const writeLog = (msg, isSuccess = false) => {
         const div = document.createElement('div');
-        div.className = 'file-item';
-        div.innerHTML = `<span>${path}</span><span style="color:var(--accent)">Stored</span>`;
-        fileList.appendChild(div);
-    }
+        div.className = 'log-entry' + (isSuccess ? ' green' : '');
+        div.innerText = `> ${msg}`;
+        logEl.appendChild(div);
+        logEl.scrollTop = logEl.scrollHeight;
+    };
 
-    bundleBtn.addEventListener('click', () => {
-        status.innerText = "Bundling...";
-        const mainHtmlPath = Object.keys(vfs).find(p => p.endsWith('index.html')) || Object.keys(vfs)[0];
-        
-        if (!mainHtmlPath) {
-            alert("No HTML file found to use as entry point.");
-            return;
+    // 1. Handle Folder Import
+    folderInput.addEventListener('change', async (e) => {
+        const files = Array.from(e.target.files);
+        if (files.length === 0) return;
+
+        vfs = {};
+        logEl.innerHTML = '';
+        writeLog(`Scanning ${files.length} files...`);
+
+        for (const file of files) {
+            // Tree Shaking: Ignore git, modules, and system junk
+            if (file.webkitRelativePath.includes('.git/') || 
+                file.webkitRelativePath.includes('node_modules/') || 
+                file.name.startsWith('.')) continue;
+
+            const path = file.webkitRelativePath.split('/').slice(1).join('/'); // Remove root folder name
+            const isBinary = file.type.startsWith('image/') || file.type.includes('font') || file.type.includes('icon');
+
+            if (isBinary) {
+                vfs[path] = { content: await toBase64(file), type: file.type, isBinary: true };
+            } else {
+                vfs[path] = { content: await file.text(), type: file.type, isBinary: false };
+            }
+            writeLog(`Indexed: ${path}`);
         }
 
-        let bundle = vfs[mainHtmlPath].content;
-        const baseDir = mainHtmlPath.substring(0, mainHtmlPath.lastIndexOf('/')) || '';
-
-        // 1. Inline Stylesheets
-        bundle = bundle.replace(/<link.*rel=["']stylesheet["'].*href=["'](.*?)["'].*?>/g, (match, href) => {
-            const fullPath = resolvePath(baseDir, href);
-            if (vfs[fullPath]) {
-                return `<style>\n/* Inlined: ${href} */\n${vfs[fullPath].content}\n</style>`;
-            }
-            return match;
-        });
-
-        // 2. Inline Scripts
-        bundle = bundle.replace(/<script.*src=["'](.*?)["'].*?><\/script>/g, (match, src) => {
-            const fullPath = resolvePath(baseDir, src);
-            if (vfs[fullPath]) {
-                return `<script>\n/* Inlined: ${src} */\n${vfs[fullPath].content}\n<\/script>`;
-            }
-            return match;
-        });
-
-        // 3. Asset Replacement (Images in HTML)
-        bundle = bundle.replace(/<img.*src=["'](.*?)["'].*?>/g, (match, src) => {
-            const fullPath = resolvePath(baseDir, src);
-            if (vfs[fullPath] && typeof vfs[fullPath].content === 'string' && vfs[fullPath].content.startsWith('data:')) {
-                return match.replace(src, vfs[fullPath].content);
-            }
-            return match;
-        });
-
-        downloadBundle(bundle);
-        status.innerText = "Bundle complete! Downloaded.";
+        dropText.innerText = `${Object.keys(vfs).length} Files Imported`;
+        bundleBtn.disabled = false;
+        writeLog(`Import Complete. Ready to merge.`, true);
     });
 
-    function resolvePath(base, relative) {
-        if (relative.startsWith('http')) return relative;
-        const stack = base ? base.split('/') : [];
-        const parts = relative.split('/');
-        for (const part of parts) {
-            if (part === '.') continue;
-            if (part === '..') stack.pop();
-            else stack.push(part);
-        }
-        return stack.join('/');
-    }
+    const toBase64 = file => new Promise(res => {
+        const r = new FileReader();
+        r.onload = () => res(r.result);
+        r.readAsDataURL(file);
+    });
 
-    function downloadBundle(content) {
+    // 2. The Merging Engine
+    bundleBtn.onclick = () => {
+        writeLog("Starting Monolith Construction...");
+        
+        // Find index.html
+        const entryKey = Object.keys(vfs).find(k => k.toLowerCase() === 'index.html') || Object.keys(vfs)[0];
+        let html = vfs[entryKey].content;
+
+        // VFS SHIM: Injected at the top of <head> to handle internal fetch/resource loading
+        const vfsShim = `
+<script>
+    window._NEXUS_VFS = ${JSON.stringify(vfs)};
+    
+    // Intercept Fetch calls so your PWA logic still works
+    const _origFetch = window.fetch;
+    window.fetch = async (input, init) => {
+        const url = input.toString().split('/').pop(); // Simple name matching for VFS
+        if (window._NEXUS_VFS[url]) {
+            console.log('Nexus VFS Hit:', url);
+            const file = window._NEXUS_VFS[url];
+            const responseData = file.isBinary ? await (await _origFetch(file.content)).blob() : file.content;
+            return new Response(responseData, { headers: { 'Content-Type': file.type } });
+        }
+        return _origFetch(input, init);
+    };
+
+    // Auto-update broken paths in the DOM
+    document.addEventListener('DOMContentLoaded', () => {
+        document.querySelectorAll('[src], [href]').forEach(el => {
+            const attr = el.hasAttribute('src') ? 'src' : 'href';
+            const path = el.getAttribute(attr);
+            if (window._NEXUS_VFS[path]) el[attr] = window._NEXUS_VFS[path].content;
+        });
+    });
+<\/script>`;
+
+        html = html.replace('<head>', '<head>' + vfsShim);
+
+        // Inline CSS
+        html = html.replace(/<link.*rel=["']stylesheet["'].*href=["'](.*?)["'].*?>/g, (match, href) => {
+            const fileName = href.split('/').pop();
+            return vfs[fileName] ? `<style>\n/* Inlined ${fileName} */\n${vfs[fileName].content}\n</style>` : match;
+        });
+
+        // Inline JS
+        html = html.replace(/<script.*src=["'](.*?)["'].*?><\/script>/g, (match, src) => {
+            const fileName = src.split('/').pop();
+            return vfs[fileName] ? `<script>\n/* Inlined ${fileName} */\n${vfs[fileName].content}\n<\/script>` : match;
+        });
+
+        // Process Base64 for internal images in HTML
+        Object.keys(vfs).forEach(key => {
+            if (vfs[key].isBinary) {
+                html = html.split(key).join(vfs[key].content);
+            }
+        });
+
+        download(html);
+        writeLog("Monolith Generated! Check your downloads.", true);
+    };
+
+    function download(content) {
         const blob = new Blob([content], { type: 'text/html' });
-        const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        a.href = url;
+        a.href = URL.createObjectURL(blob);
         a.download = 'pwa-monolith.html';
         a.click();
     }
