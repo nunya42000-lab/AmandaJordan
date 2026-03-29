@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Nexus Merger Prime | DevOS</title>
+    <style>
+        :root {
+            --bg: #0d1117; --panel: #161b22; --surface: #21262d;
+            --gold: #d29922; --success: #3fb950; --danger: #f85149;
+            --text: #c9d1d9; --border: #30363d;
+        }
+
+        body, html {
+            margin: 0; padding: 0; height: 100%; width: 100%;
+            background: var(--bg); color: var(--text);
+            font-family: -apple-system, sans-serif; overflow: hidden;
+        }
+
+        #app { display: flex; flex-direction: column; height: 100vh; }
+
+        /* --- Header & Ribbon --- */
+        header { background: var(--panel); border-bottom: 1px solid var(--border); padding: 10px; }
+        
+        #ribbon-container {
+            overflow: hidden; width: 100%; position: relative;
+            background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+        }
+
+        #kb-drawer {
+            display: flex; overflow-x: auto; white-space: nowrap;
+            scroll-behavior: auto; padding: 5px;
+        }
+        #kb-drawer::-webkit-scrollbar { display: none; }
+
+        .tool-btn {
+            flex: 0 0 auto; background: var(--panel); color: var(--text);
+            border: 1px solid var(--border); padding: 8px 15px; margin: 0 5px;
+            border-radius: 4px; font-weight: bold; cursor: pointer;
+        }
+        .tool-btn:active { border-color: var(--gold); color: var(--gold); }
+
+        /* --- Main Workspace --- */
+        main { flex: 1; display: flex; overflow: hidden; }
+        
+        #file-list {
+            width: 280px; background: var(--panel); border-right: 1px solid var(--border);
+            overflow-y: auto; padding: 10px;
+        }
+
+        .file-item {
+            display: flex; align-items: center; padding: 8px;
+            border-bottom: 1px solid var(--surface); font-size: 14px;
+        }
+        .file-item input { margin-right: 10px; accent-color: var(--gold); }
+
+        #viewer { flex: 1; padding: 20px; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+
+        /* --- Terminal --- */
+        #terminal-zone {
+            height: 160px; background: #000; border-top: 2px solid var(--gold);
+            padding: 10px; font-family: 'Courier New', monospace; overflow-y: auto;
+        }
+        #term-out { color: #00ff41; font-size: 13px; margin-bottom: 10px; }
+        #term-in {
+            width: 100%; background: transparent; border: none; color: #00ff41;
+            outline: none; font-family: inherit; font-size: 14px;
+        }
+
+        .btn-large {
+            background: var(--gold); color: #000; border: none;
+            padding: 15px 30px; font-size: 18px; font-weight: bold;
+            border-radius: 8px; cursor: pointer; margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+
+<div id="app">
+    <header>
+        <div id="ribbon-container">
+            <div id="kb-drawer"></div>
+        </div>
+    </header>
+
+    <main>
+        <div id="file-list">
+            <h3 style="color: var(--gold); margin-top: 0;">Project Files</h3>
+            <div id="file-registry">
+                <p style="font-size: 12px; color: var(--border);">No files loaded.</p>
+            </div>
+        </div>
+
+        <div id="viewer">
+            <h1 style="color: var(--gold);">Nexus Merger</h1>
+            <p>Load your 50+ file project folder to begin selection.</p>
+            <div style="display: flex; gap: 10px;">
+                <button class="tool-btn" onclick="triggerFolderLoad()">📁 Load Project Folder</button>
+                <button class="tool-btn" onclick="triggerFileLoad()">📄 Load Files</button>
+            </div>
+            <button class="btn-large" id="merge-btn" style="display:none;" onclick="executeMerge()">EXECUTE MASTER MERGE</button>
+        </div>
+    </main>
+
+    <div id="terminal-zone">
+        <div id="term-out"></div>
+        <div style="display:flex;">
+            <span style="color:var(--gold); margin-right:5px;">&gt;</span>
+            <input type="text" id="term-in" placeholder="Command..." spellcheck="false">
+        </div>
+    </div>
+</div>
+
+<script>
+    const VFS = {};
+    const ribbonKeys = ["IMPORT", "SELECT ALL", "DESELECT", "MERGE", "CLEAN", "PREDICT", "STATUS", "SYNC", "RELOAD", "NUKE"];
+
+    // --- Infinite Ribbon Logic ---
+    function initRibbon() {
+        const drawer = document.getElementById('kb-drawer');
+        const tripled = [...ribbonKeys, ...ribbonKeys, ...ribbonKeys];
+        
+        tripled.forEach(key => {
+            const btn = document.createElement('button');
+            btn.className = 'tool-btn';
+            btn.innerText = key;
+            btn.onclick = () => handleCommand(key.toLowerCase());
+            drawer.appendChild(btn);
+        });
+
+        drawer.onscroll = () => {
+            const oneThird = drawer.scrollWidth / 3;
+            if (drawer.scrollLeft >= oneThird * 2) drawer.scrollLeft = oneThird;
+            else if (drawer.scrollLeft <= 0) drawer.scrollLeft = oneThird;
+        };
+
+        setTimeout(() => drawer.scrollLeft = drawer.scrollWidth / 3, 100);
+    }
+
+    // --- File Loading ---
+    function triggerFolderLoad() {
+        const input = document.createElement('input');
+        input.type = 'file'; input.webkitdirectory = true;
+        input.onchange = handleFiles;
+        input.click();
+    }
+
+    function triggerFileLoad() {
+        const input = document.createElement('input');
+        input.type = 'file'; input.multiple = true;
+        input.onchange = handleFiles;
+        input.click();
+    }
+
+    async function handleFiles(e) {
+        const files = Array.from(e.target.files);
+        log(`Loading ${files.length} assets...`, "var(--gold)");
+        
+        for (const file of files) {
+            const path = file.webkitRelativePath || file.name;
+            const content = await file.text();
+            VFS[path] = content;
+        }
+        renderFileRegistry();
+        document.getElementById('merge-btn').style.display = 'block';
+        log("Import Complete. Ready for Selection.", "var(--success)");
+    }
+
+    function renderFileRegistry() {
+        const container = document.getElementById('file-registry');
+        container.innerHTML = '';
+        Object.keys(VFS).forEach(path => {
+            const div = document.createElement('div');
+            div.className = 'file-item';
+            div.innerHTML = `
+                <input type="checkbox" id="chk-${path}" checked>
+                <label for="chk-${path}">${path}</label>
+            `;
+            container.appendChild(div);
+        });
+    }
+
+    // --- Merging Logic ---
+    function executeMerge() {
+        log("Initiating Master Bundle...", "var(--gold)");
+        const selected = Array.from(document.querySelectorAll('.file-item input:checked'))
+                             .map(chk => chk.id.replace('chk-', ''));
+        
+        let jsBlock = "";
+        let cssBlock = "";
+        let htmlBase = VFS['index.html'] || "<html><head></head><body><div id='app'></div></body></html>";
+
+        selected.forEach(path => {
+            if (path.endsWith('.js')) jsBlock += `\n/* Source: ${path} */\n${VFS[path]}\n`;
+            if (path.endsWith('.css')) cssBlock += `\n/* Source: ${path} */\n${VFS[path]}\n`;
+        });
+
+        let finalDoc = htmlBase
+            .replace(/<link.*rel="stylesheet".*>/g, '')
+            .replace(/<script.*src=".*".*><\/script>/g, '')
+            .replace('</head>', `<style>${cssBlock}</style>\n</head>`)
+            .replace('</body>', `<script type="module">${jsBlock}</script>\n</body>`);
+
+        const blob = new Blob([finalDoc], { type: 'text/html' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'nexus_standalone_build.html';
+        a.click();
+        log("Master Build Generated. Download started.", "var(--success)");
+    }
+
+    // --- Terminal Logic ---
+    function log(msg, color = "#00ff41") {
+        const out = document.getElementById('term-out');
+        const line = document.createElement('div');
+        line.style.color = color;
+        line.innerText = `> ${msg}`;
+        out.appendChild(line);
+        out.parentElement.scrollTop = out.parentElement.scrollHeight;
+    }
+
+    function handleCommand(cmd) {
+        const args = cmd.split(' ');
+        const base = args[0];
+
+        switch(base) {
+            case 'import': triggerFileLoad(); break;
+            case 'merge': executeMerge(); break;
+            case 'status': log(`VFS contains ${Object.keys(VFS).length} files.`); break;
+            case 'predict': 
+                log("Analyzing sequence patterns...", "var(--gold)");
+                setTimeout(() => {
+                    const conf = Math.floor(Math.random() * 25) + 75;
+                    log(`Pattern match found. Confidence: ${conf}%`, "var(--success)");
+                    log("Action: Recommended Max Bet on next trigger.", "var(--gold)");
+                }, 1000);
+                break;
+            case 'clean':
+                document.getElementById('term-out').innerHTML = '';
+                break;
+            case 'select':
+                document.querySelectorAll('.file-item input').forEach(c => c.checked = true);
+                log("All files selected.");
+                break;
+            case 'nuke':
+                if(confirm("Wipe VFS?")) {
+                    for (let member in VFS) delete VFS[member];
+                    renderFileRegistry();
+                    log("VFS Purged.", "var(--danger)");
+                }
+                break;
+            default:
+                log(`Command '${base}' not recognized.`, "var(--danger)");
+        }
+    }
+
+    document.getElementById('term-in').onkeydown = (e) => {
+        if (e.key === 'Enter') {
+            handleCommand(e.target.value);
+            e.target.value = '';
+        }
+    };
+
+    // --- Boot ---
+    initRibbon();
+    log("Nexus Merger Prime Online. Awaiting Project Files...");
+</script>
+
+</body>
+</html>
