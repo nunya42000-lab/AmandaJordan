@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nexus Bundler Pro | Master Injector</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/localforage/1.10.0/localforage.min.js"></script>
+    <style>
+        :root {
+            --bg: #0d1117; --panel: #161b22; --border: #30363d; 
+            --text: #c9d1d9; --accent: #58a6ff; --success: #238636; --gold: #d29922;
+        }
+        body { background: var(--bg); color: var(--text); font-family: sans-serif; margin: 0; padding: 20px; }
+        .container { max-width: 800px; margin: 0 auto; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 20px; }
+        .file-list { margin: 20px 0; border: 1px solid var(--border); border-radius: 4px; max-height: 200px; overflow-y: auto; }
+        .file-item { padding: 10px; display: flex; justify-content: space-between; border-bottom: 1px solid var(--border); font-size: 13px; }
+        .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 20px; }
+        button { background: var(--accent); color: white; border: none; padding: 12px; border-radius: 5px; cursor: pointer; font-weight: bold; }
+        button.secondary { background: var(--success); }
+        button.prep { background: var(--gold); }
+        select, input[type="file"] { width: 100%; padding: 10px; background: #000; color: #fff; border: 1px solid var(--border); margin-top: 5px; }
+        #log { margin-top: 20px; padding: 10px; background: #000; color: #22c55e; font-family: monospace; font-size: 12px; height: 100px; overflow-y: auto; border-radius: 4px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>📦 Nexus Bundler Pro</h2>
+    
+    <label>1. Import Files to VFS</label>
+    <input type="file" id="file-input" multiple onchange="Bundler.handleImports(event)">
+
+    <div class="file-list" id="vfs-list">
+        </div>
+
+    <div class="controls">
+        <div>
+            <label>2. Select Master HTML</label>
+            <select id="master-select"></select>
+        </div>
+        <div>
+            <label>3. Actions</label>
+            <div style="display: flex; gap: 5px; margin-top: 5px;">
+                <button class="prep" onclick="Bundler.prepJS()" style="flex: 1;">✨ Minify JS</button>
+                <button class="secondary" onclick="Bundler.executeBundle()" style="flex: 1;">🚀 Build & Download</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="log">> System Ready.</div>
+</div>
+
+<script>
+const Bundler = {
+    vfs: {},
+
+    async init() {
+        const saved = await localforage.getItem('nexus_vfs_pro');
+        if (saved) this.vfs = saved;
+        this.refreshUI();
+    },
+
+    log(msg) {
+        const l = document.getElementById('log');
+        l.innerHTML += `<div>> ${msg}</div>`;
+        l.scrollTop = l.scrollHeight;
+    },
+
+    handleImports(e) {
+        const files = Array.from(e.target.files);
+        files.forEach(file => {
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                this.vfs[file.name] = ev.target.result;
+                this.log(`Imported: ${file.name}`);
+                this.refreshUI();
+                this.save();
+            };
+            reader.readAsText(file);
+        });
+    },
+
+    refreshUI() {
+        const list = document.getElementById('vfs-list');
+        const select = document.getElementById('master-select');
+        list.innerHTML = '';
+        select.innerHTML = '<option value="">-- Choose Master --</option>';
+
+        Object.keys(this.vfs).forEach(name => {
+            // Update List
+            list.innerHTML += `<div class="file-item"><span>${name}</span><button onclick="Bundler.deleteFile('${name}')" style="padding:2px 5px; background:red;">🗑️</button></div>`;
+            
+            // Update Select if HTML
+            if (name.endsWith('.html')) {
+                select.innerHTML += `<option value="${name}">${name}</option>`;
+            }
+        });
+    },
+
+    deleteFile(name) {
+        delete this.vfs[name];
+        this.save();
+        this.refreshUI();
+    },
+
+    save() {
+        localforage.setItem('nexus_vfs_pro', this.vfs);
+    },
+
+    // --- The "Prep" logic: Minification ---
+    prepJS() {
+        this.log("Minifying JavaScript modules...");
+        let count = 0;
+        Object.keys(this.vfs).forEach(name => {
+            if (name.endsWith('.js')) {
+                let code = this.vfs[name];
+                // Simple Regex Minifier
+                code = code
+                    .replace(/\/\*[\s\S]*?\*\/|([^\\:]|^)\/\/.*$/gm, '$1') // Remove comments
+                    .replace(/\s+/g, ' ') // Collapse whitespace
+                    .replace(/; /g, ';') // Remove spaces after semicolons
+                    .trim();
+                this.vfs[name] = code;
+                count++;
+            }
+        });
+        this.log(`Optimization complete. ${count} JS files compressed.`);
+        this.save();
+    },
+
+    // --- The Bundler logic ---
+    executeBundle() {
+        const masterName = document.getElementById('master-select').value;
+        if (!masterName) return alert("Select a Master HTML file first.");
+
+        this.log(`Starting Master Build: ${masterName}`);
+        let masterContent = this.vfs[masterName];
+
+        // 1. Gather all CSS and JS from VFS
+        let masterCSS = "";
+        let masterJS = "";
+        
+        Object.keys(this.vfs).forEach(name => {
+            if (name === masterName) return;
+            if (name.endsWith('.css')) masterCSS += `\n/* ${name} */\n${this.vfs[name]}`;
+            if (name.endsWith('.js')) masterJS += `\n// ${name}\n${this.vfs[name]}`;
+        });
+
+        // 2. Injection logic
+        let finalDoc = masterContent
+            .replace(/<link.*rel="stylesheet".*?>/gi, '') // Remove existing link tags
+            .replace(/<script.*src=".*?"><\/script>/gi, '') // Remove existing script tags
+            .replace('</head>', `<style>${masterCSS}</style>\n</head>`)
+            .replace('</body>', `<script type="module">${masterJS}</script>\n</body>`);
+
+        // 3. Download
+        const blob = new Blob([finalDoc], { type: 'text/html' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `dist_${masterName}`;
+        a.click();
+        
+        this.log("Build successful. Downloading production file.");
+    }
+};
+
+document.addEventListener('DOMContentLoaded', () => Bundler.init());
+</script>
+</body>
+</html>
