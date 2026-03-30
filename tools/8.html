@@ -2,59 +2,126 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>HTML5 Single-File Bundler</title>
     <style>
-        body { font-family: system-ui, sans-serif; background: #121212; color: #e0e0e0; padding: 2rem; line-height: 1.5; }
-        .card { max-width: 700px; margin: 0 auto; background: #1e1e1e; border: 1px solid #333; border-radius: 12px; padding: 2rem; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
-        .step { margin-bottom: 2rem; padding: 1rem; border-left: 4px solid #444; background: #252525; }
-        .step.active { border-left-color: #007bff; }
-        h2 { margin-top: 0; font-size: 1.2rem; color: #007bff; }
-        input, select, button { width: 100%; padding: 12px; margin-top: 10px; border-radius: 6px; border: 1px solid #444; background: #121212; color: white; box-sizing: border-box; }
-        button { cursor: pointer; font-weight: bold; transition: background 0.2s; border: none; }
-        button:hover { background: #333; }
+        /* FIX 1: Universal box-sizing prevents padding from pushing width out */
+        * { box-sizing: border-box; }
+
+        body { 
+            font-family: system-ui, sans-serif; 
+            background: #121212; 
+            color: #e0e0e0; 
+            padding: 1rem; 
+            margin: 0;
+            line-height: 1.5; 
+        }
+
+        /* FIX 2: Responsive card width */
+        .card { 
+            width: 100%;
+            max-width: 700px; 
+            margin: 20px auto; 
+            background: #1e1e1e; 
+            border: 1px solid #333; 
+            border-radius: 12px; 
+            padding: 1.5rem; 
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5); 
+            overflow: hidden; /* Contains children */
+        }
+
+        .step { 
+            margin-bottom: 1.5rem; 
+            padding: 1rem; 
+            border-left: 4px solid #444; 
+            background: #252525; 
+        }
+
+        h2 { margin-top: 0; font-size: 1.1rem; color: #007bff; }
+        
+        input, select, button { 
+            width: 100%; 
+            padding: 12px; 
+            margin-top: 10px; 
+            border-radius: 6px; 
+            border: 1px solid #444; 
+            background: #121212; 
+            color: white; 
+        }
+
+        button { cursor: pointer; font-weight: bold; border: none; }
         .btn-prep { background: #f39c12; color: #000; }
-        .btn-prep:hover { background: #e67e22; }
         .btn-build { background: #27ae60; }
-        .btn-build:hover { background: #2ecc71; }
-        #log { font-family: monospace; font-size: 0.85rem; color: #888; margin-top: 1rem; max-height: 150px; overflow-y: auto; background: #000; padding: 10px; }
-        .file-tag { display: inline-block; background: #333; padding: 2px 8px; border-radius: 4px; margin: 4px; font-size: 0.8rem; }
+
+        /* FIX 3: Prevent log text from bleeding out */
+        #log { 
+            font-family: monospace; 
+            font-size: 0.8rem; 
+            color: #888; 
+            margin-top: 1rem; 
+            max-height: 180px; 
+            overflow-y: auto; 
+            overflow-x: hidden; /* Prevent horizontal scroll */
+            background: #000; 
+            padding: 12px; 
+            border-radius: 4px;
+            word-break: break-all; /* Forces long strings to wrap */
+            white-space: pre-wrap; /* Maintains spacing but wraps lines */
+        }
+
+        /* FIX 4: Ensure file list wraps correctly */
+        #fileStatus {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+            margin-top: 10px;
+        }
+
+        .file-tag { 
+            background: #333; 
+            padding: 4px 10px; 
+            border-radius: 4px; 
+            font-size: 0.75rem; 
+            border: 1px solid #444;
+        }
     </style>
 </head>
 <body>
 
 <div class="card">
-    <h1>📦 File Bundler</h1>
+    <h1 style="margin-top:0; font-size: 1.5rem;">📦 File Bundler</h1>
 
     <div class="step">
-        <h2>Step 1: Load Resources</h2>
+        <h2>1. Load Resources</h2>
         <input type="file" id="fileInput" multiple accept=".html,.js,.css">
         <div id="fileStatus"></div>
     </div>
 
     <div class="step">
-        <h2>Step 2: Prepare & Minify</h2>
-        <p style="font-size: 0.8rem; color: #aaa;">This will strip comments and collapse whitespace from all loaded JS files.</p>
+        <h2>2. Prepare & Minify</h2>
         <button class="btn-prep" onclick="app.minify()">✨ Minify JavaScript</button>
     </div>
 
     <div class="step">
-        <h2>Step 3: Select Master & Build</h2>
+        <h2>3. Master & Build</h2>
         <select id="masterSelect">
             <option value="">-- Choose HTML Master --</option>
         </select>
         <button class="btn-build" onclick="app.build()">🚀 Build Single File</button>
     </div>
 
-    <div id="log">System initialized. Waiting for files...</div>
+    <div id="log">System ready.</div>
 </div>
 
 <script>
 const app = {
-    vfs: {}, // Virtual File System
+    vfs: {},
 
     log(msg) {
         const log = document.getElementById('log');
-        log.innerHTML += `<div>> ${msg}</div>`;
+        const div = document.createElement('div');
+        div.textContent = `> ${msg}`;
+        log.appendChild(div);
         log.scrollTop = log.scrollHeight;
     },
 
@@ -79,16 +146,12 @@ const app = {
     updateUI() {
         const select = document.getElementById('masterSelect');
         const status = document.getElementById('fileStatus');
-        
-        // Reset
         select.innerHTML = '<option value="">-- Choose HTML Master --</option>';
         status.innerHTML = '';
 
         Object.keys(this.vfs).forEach(name => {
             const f = this.vfs[name];
-            // Update UI list
             status.innerHTML += `<span class="file-tag">${name}</span>`;
-            // Update Master selection
             if (f.type === 'html') {
                 const opt = document.createElement('option');
                 opt.value = name;
@@ -103,17 +166,11 @@ const app = {
         Object.keys(this.vfs).forEach(name => {
             if (this.vfs[name].type === 'js') {
                 let code = this.vfs[name].content;
-                
-                // Simple regex minification:
-                // 1. Remove single line comments
-                code = code.replace(/\/\/\s?.*$/gm, '');
-                // 2. Remove multi-line comments
-                code = code.replace(/\/\*[\s\S]*?\*\//g, '');
-                // 3. Collapse multiple spaces into one
-                code = code.replace(/\s+/g, ' ');
-                // 4. Remove spaces around operators
-                code = code.replace(/\s?([\{\}\(\)\=\+\-\*\/\,])\s?/g, '$1');
-                
+                // Minification Regex
+                code = code.replace(/\/\/\s?.*$/gm, '') // single line
+                           .replace(/\/\*[\s\S]*?\*\//g, '') // multi line
+                           .replace(/\s+/g, ' ') // collapse space
+                           .replace(/\s?([\{\}\(\)\=\+\-\*\/\,])\s?/g, '$1'); // trim operators
                 this.vfs[name].content = code.trim();
                 count++;
             }
@@ -123,55 +180,36 @@ const app = {
 
     build() {
         const masterName = document.getElementById('masterSelect').value;
-        if (!masterName) {
-            alert("Please select a Master HTML file.");
-            return;
-        }
+        if (!masterName) return alert("Select a Master HTML file.");
 
         this.log(`Bundling...`);
         let html = this.vfs[masterName].content;
 
-        // 1. Inject CSS
         let cssBundle = "";
+        let jsBundle = "";
+        
         Object.keys(this.vfs).forEach(name => {
-            if (this.vfs[name].type === 'css') {
-                cssBundle += `\n/* ${name} */\n${this.vfs[name].content}\n`;
-            }
+            if (name === masterName) return;
+            if (this.vfs[name].type === 'css') cssBundle += `\n/* ${name} */\n${this.vfs[name].content}\n`;
+            if (this.vfs[name].type === 'js') jsBundle += `\n// ${name}\n${this.vfs[name].content}\n`;
         });
         
-        // Remove existing link tags and inject bundled CSS
         html = html.replace(/<link.*rel="stylesheet".*?>/gi, '');
         html = html.replace('</head>', `<style>${cssBundle}</style>\n</head>`);
-
-        // 2. Inject JS
-        let jsBundle = "";
-        Object.keys(this.vfs).forEach(name => {
-            if (this.vfs[name].type === 'js') {
-                jsBundle += `\n// --- MODULE: ${name} ---\n${this.vfs[name].content}\n`;
-            }
-        });
-
-        // Remove existing script tags that have 'src' and inject bundled JS
         html = html.replace(/<script.*src=".*?"><\/script>/gi, '');
         html = html.replace('</body>', `<script type="module">${jsBundle}<\/script>\n</body>`);
 
-        this.download(html, `bundled_${masterName}`);
-        this.log("Build complete. Check your downloads.");
-    },
-
-    download(content, filename) {
-        const blob = new Blob([content], { type: 'text/html' });
+        const blob = new Blob([html], { type: 'text/html' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = filename;
+        a.download = `bundled_${masterName}`;
         a.click();
-        URL.revokeObjectURL(url);
+        this.log("Build complete.");
     }
 };
 
 app.init();
 </script>
-
 </body>
 </html>
