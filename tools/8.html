@@ -2,170 +2,176 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Nexus Bundler Pro | Master Injector</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/localforage/1.10.0/localforage.min.js"></script>
+    <title>HTML5 Single-File Bundler</title>
     <style>
-        :root {
-            --bg: #0d1117; --panel: #161b22; --border: #30363d; 
-            --text: #c9d1d9; --accent: #58a6ff; --success: #238636; --gold: #d29922;
-        }
-        body { background: var(--bg); color: var(--text); font-family: sans-serif; margin: 0; padding: 20px; }
-        .container { max-width: 800px; margin: 0 auto; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 20px; }
-        .file-list { margin: 20px 0; border: 1px solid var(--border); border-radius: 4px; max-height: 200px; overflow-y: auto; }
-        .file-item { padding: 10px; display: flex; justify-content: space-between; border-bottom: 1px solid var(--border); font-size: 13px; }
-        .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 20px; }
-        button { background: var(--accent); color: white; border: none; padding: 12px; border-radius: 5px; cursor: pointer; font-weight: bold; }
-        button.secondary { background: var(--success); }
-        button.prep { background: var(--gold); }
-        select, input[type="file"] { width: 100%; padding: 10px; background: #000; color: #fff; border: 1px solid var(--border); margin-top: 5px; }
-        #log { margin-top: 20px; padding: 10px; background: #000; color: #22c55e; font-family: monospace; font-size: 12px; height: 100px; overflow-y: auto; border-radius: 4px; }
+        body { font-family: system-ui, sans-serif; background: #121212; color: #e0e0e0; padding: 2rem; line-height: 1.5; }
+        .card { max-width: 700px; margin: 0 auto; background: #1e1e1e; border: 1px solid #333; border-radius: 12px; padding: 2rem; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        .step { margin-bottom: 2rem; padding: 1rem; border-left: 4px solid #444; background: #252525; }
+        .step.active { border-left-color: #007bff; }
+        h2 { margin-top: 0; font-size: 1.2rem; color: #007bff; }
+        input, select, button { width: 100%; padding: 12px; margin-top: 10px; border-radius: 6px; border: 1px solid #444; background: #121212; color: white; box-sizing: border-box; }
+        button { cursor: pointer; font-weight: bold; transition: background 0.2s; border: none; }
+        button:hover { background: #333; }
+        .btn-prep { background: #f39c12; color: #000; }
+        .btn-prep:hover { background: #e67e22; }
+        .btn-build { background: #27ae60; }
+        .btn-build:hover { background: #2ecc71; }
+        #log { font-family: monospace; font-size: 0.85rem; color: #888; margin-top: 1rem; max-height: 150px; overflow-y: auto; background: #000; padding: 10px; }
+        .file-tag { display: inline-block; background: #333; padding: 2px 8px; border-radius: 4px; margin: 4px; font-size: 0.8rem; }
     </style>
 </head>
 <body>
 
-<div class="container">
-    <h2>📦 Nexus Bundler Pro</h2>
-    
-    <label>1. Import Files to VFS</label>
-    <input type="file" id="file-input" multiple onchange="Bundler.handleImports(event)">
+<div class="card">
+    <h1>📦 File Bundler</h1>
 
-    <div class="file-list" id="vfs-list">
-        </div>
-
-    <div class="controls">
-        <div>
-            <label>2. Select Master HTML</label>
-            <select id="master-select"></select>
-        </div>
-        <div>
-            <label>3. Actions</label>
-            <div style="display: flex; gap: 5px; margin-top: 5px;">
-                <button class="prep" onclick="Bundler.prepJS()" style="flex: 1;">✨ Minify JS</button>
-                <button class="secondary" onclick="Bundler.executeBundle()" style="flex: 1;">🚀 Build & Download</button>
-            </div>
-        </div>
+    <div class="step">
+        <h2>Step 1: Load Resources</h2>
+        <input type="file" id="fileInput" multiple accept=".html,.js,.css">
+        <div id="fileStatus"></div>
     </div>
 
-    <div id="log">> System Ready.</div>
+    <div class="step">
+        <h2>Step 2: Prepare & Minify</h2>
+        <p style="font-size: 0.8rem; color: #aaa;">This will strip comments and collapse whitespace from all loaded JS files.</p>
+        <button class="btn-prep" onclick="app.minify()">✨ Minify JavaScript</button>
+    </div>
+
+    <div class="step">
+        <h2>Step 3: Select Master & Build</h2>
+        <select id="masterSelect">
+            <option value="">-- Choose HTML Master --</option>
+        </select>
+        <button class="btn-build" onclick="app.build()">🚀 Build Single File</button>
+    </div>
+
+    <div id="log">System initialized. Waiting for files...</div>
 </div>
 
 <script>
-const Bundler = {
-    vfs: {},
-
-    async init() {
-        const saved = await localforage.getItem('nexus_vfs_pro');
-        if (saved) this.vfs = saved;
-        this.refreshUI();
-    },
+const app = {
+    vfs: {}, // Virtual File System
 
     log(msg) {
-        const l = document.getElementById('log');
-        l.innerHTML += `<div>> ${msg}</div>`;
-        l.scrollTop = l.scrollHeight;
+        const log = document.getElementById('log');
+        log.innerHTML += `<div>> ${msg}</div>`;
+        log.scrollTop = log.scrollHeight;
     },
 
-    handleImports(e) {
-        const files = Array.from(e.target.files);
-        files.forEach(file => {
-            const reader = new FileReader();
-            reader.onload = (ev) => {
-                this.vfs[file.name] = ev.target.result;
-                this.log(`Imported: ${file.name}`);
-                this.refreshUI();
-                this.save();
-            };
-            reader.readAsText(file);
+    init() {
+        document.getElementById('fileInput').addEventListener('change', (e) => {
+            const files = Array.from(e.target.files);
+            files.forEach(file => {
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    this.vfs[file.name] = {
+                        content: event.target.result,
+                        type: file.name.split('.').pop()
+                    };
+                    this.log(`Loaded: ${file.name}`);
+                    this.updateUI();
+                };
+                reader.readAsText(file);
+            });
         });
     },
 
-    refreshUI() {
-        const list = document.getElementById('vfs-list');
-        const select = document.getElementById('master-select');
-        list.innerHTML = '';
-        select.innerHTML = '<option value="">-- Choose Master --</option>';
+    updateUI() {
+        const select = document.getElementById('masterSelect');
+        const status = document.getElementById('fileStatus');
+        
+        // Reset
+        select.innerHTML = '<option value="">-- Choose HTML Master --</option>';
+        status.innerHTML = '';
 
         Object.keys(this.vfs).forEach(name => {
-            // Update List
-            list.innerHTML += `<div class="file-item"><span>${name}</span><button onclick="Bundler.deleteFile('${name}')" style="padding:2px 5px; background:red;">🗑️</button></div>`;
-            
-            // Update Select if HTML
-            if (name.endsWith('.html')) {
-                select.innerHTML += `<option value="${name}">${name}</option>`;
+            const f = this.vfs[name];
+            // Update UI list
+            status.innerHTML += `<span class="file-tag">${name}</span>`;
+            // Update Master selection
+            if (f.type === 'html') {
+                const opt = document.createElement('option');
+                opt.value = name;
+                opt.textContent = name;
+                select.appendChild(opt);
             }
         });
     },
 
-    deleteFile(name) {
-        delete this.vfs[name];
-        this.save();
-        this.refreshUI();
-    },
-
-    save() {
-        localforage.setItem('nexus_vfs_pro', this.vfs);
-    },
-
-    // --- The "Prep" logic: Minification ---
-    prepJS() {
-        this.log("Minifying JavaScript modules...");
+    minify() {
         let count = 0;
         Object.keys(this.vfs).forEach(name => {
-            if (name.endsWith('.js')) {
-                let code = this.vfs[name];
-                // Simple Regex Minifier
-                code = code
-                    .replace(/\/\*[\s\S]*?\*\/|([^\\:]|^)\/\/.*$/gm, '$1') // Remove comments
-                    .replace(/\s+/g, ' ') // Collapse whitespace
-                    .replace(/; /g, ';') // Remove spaces after semicolons
-                    .trim();
-                this.vfs[name] = code;
+            if (this.vfs[name].type === 'js') {
+                let code = this.vfs[name].content;
+                
+                // Simple regex minification:
+                // 1. Remove single line comments
+                code = code.replace(/\/\/\s?.*$/gm, '');
+                // 2. Remove multi-line comments
+                code = code.replace(/\/\*[\s\S]*?\*\//g, '');
+                // 3. Collapse multiple spaces into one
+                code = code.replace(/\s+/g, ' ');
+                // 4. Remove spaces around operators
+                code = code.replace(/\s?([\{\}\(\)\=\+\-\*\/\,])\s?/g, '$1');
+                
+                this.vfs[name].content = code.trim();
                 count++;
             }
         });
-        this.log(`Optimization complete. ${count} JS files compressed.`);
-        this.save();
+        this.log(`Minified ${count} JS file(s).`);
     },
 
-    // --- The Bundler logic ---
-    executeBundle() {
-        const masterName = document.getElementById('master-select').value;
-        if (!masterName) return alert("Select a Master HTML file first.");
+    build() {
+        const masterName = document.getElementById('masterSelect').value;
+        if (!masterName) {
+            alert("Please select a Master HTML file.");
+            return;
+        }
 
-        this.log(`Starting Master Build: ${masterName}`);
-        let masterContent = this.vfs[masterName];
+        this.log(`Bundling...`);
+        let html = this.vfs[masterName].content;
 
-        // 1. Gather all CSS and JS from VFS
-        let masterCSS = "";
-        let masterJS = "";
-        
+        // 1. Inject CSS
+        let cssBundle = "";
         Object.keys(this.vfs).forEach(name => {
-            if (name === masterName) return;
-            if (name.endsWith('.css')) masterCSS += `\n/* ${name} */\n${this.vfs[name]}`;
-            if (name.endsWith('.js')) masterJS += `\n// ${name}\n${this.vfs[name]}`;
+            if (this.vfs[name].type === 'css') {
+                cssBundle += `\n/* ${name} */\n${this.vfs[name].content}\n`;
+            }
+        });
+        
+        // Remove existing link tags and inject bundled CSS
+        html = html.replace(/<link.*rel="stylesheet".*?>/gi, '');
+        html = html.replace('</head>', `<style>${cssBundle}</style>\n</head>`);
+
+        // 2. Inject JS
+        let jsBundle = "";
+        Object.keys(this.vfs).forEach(name => {
+            if (this.vfs[name].type === 'js') {
+                jsBundle += `\n// --- MODULE: ${name} ---\n${this.vfs[name].content}\n`;
+            }
         });
 
-        // 2. Injection logic
-        let finalDoc = masterContent
-            .replace(/<link.*rel="stylesheet".*?>/gi, '') // Remove existing link tags
-            .replace(/<script.*src=".*?"><\/script>/gi, '') // Remove existing script tags
-            .replace('</head>', `<style>${masterCSS}</style>\n</head>`)
-            .replace('</body>', `<script type="module">${masterJS}</script>\n</body>`);
+        // Remove existing script tags that have 'src' and inject bundled JS
+        html = html.replace(/<script.*src=".*?"><\/script>/gi, '');
+        html = html.replace('</body>', `<script type="module">${jsBundle}<\/script>\n</body>`);
 
-        // 3. Download
-        const blob = new Blob([finalDoc], { type: 'text/html' });
+        this.download(html, `bundled_${masterName}`);
+        this.log("Build complete. Check your downloads.");
+    },
+
+    download(content, filename) {
+        const blob = new Blob([content], { type: 'text/html' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `dist_${masterName}`;
+        a.download = filename;
         a.click();
-        
-        this.log("Build successful. Downloading production file.");
+        URL.revokeObjectURL(url);
     }
 };
 
-document.addEventListener('DOMContentLoaded', () => Bundler.init());
+app.init();
 </script>
+
 </body>
 </html>
