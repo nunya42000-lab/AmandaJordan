@@ -2,263 +2,276 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Gesture Engine Tester v99</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Responsive Commander Deck</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jsdiff/5.1.0/diff.min.js"></script>
     <style>
-        body {
-            background-color: #000;
-            color: #e5e5e5;
-            touch-action: none; /* Critical for gesture handling */
-            overflow: hidden;
-            font-family: 'Inter', sans-serif;
+        :root {
+            --bg: #0d1117; --panel: #161b22; --border: #30363d;
+            --text: #c9d1d9; --accent: #58a6ff; --success: #238636;
+            --danger: #da3633; --warning: #d29922;
         }
-        #touch-zone {
-            position: absolute;
-            top: 0; left: 0; right: 0; bottom: 300px;
-            z-index: 10;
-            cursor: crosshair;
+
+        /* Lock the viewport */
+        html, body { 
+            height: 100dvh; width: 100vw; margin: 0; padding: 0; 
+            overflow: hidden; overscroll-behavior: none; 
+            background: var(--bg); color: var(--text);
+            font-family: -apple-system, system-ui, "Segoe UI", monospace;
         }
-        #hud-layer {
-            position: absolute;
-            top: 0; left: 0; right: 0; bottom: 300px;
-            z-index: 5;
-            pointer-events: none;
+
+        body { display: flex; flex-direction: column; }
+
+        /* --- Global Header --- */
+        header {
+            background: var(--panel); padding: 10px 15px;
+            display: flex; gap: 10px; align-items: center; border-bottom: 1px solid var(--border);
+            z-index: 100; flex-shrink: 0;
         }
-        #console-area {
-            position: absolute;
-            bottom: 0; left: 0; right: 0;
-            height: 300px;
-            background: #111;
-            border-top: 1px solid #333;
-            z-index: 20;
-            display: flex;
-            flex-direction: column;
+
+        .btn { padding: 8px 12px; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 12px; transition: 0.2s; }
+        .btn-success { background: var(--success); color: white; }
+        .btn-sec { background: #30363d; color: var(--text); border: 1px solid var(--border); }
+        .btn:active { transform: scale(0.95); }
+
+        /* --- Decision Hub (The Controller) --- */
+        .hub {
+            background: #090c10; padding: 10px; border-bottom: 1px solid var(--border);
+            display: flex; flex-direction: column; align-items: center; gap: 8px; flex-shrink: 0;
         }
-        .log-entry {
-            font-family: monospace;
-            font-size: 12px;
-            padding: 4px 8px;
-            border-bottom: 1px solid #222;
+
+        .decision-cards { display: flex; gap: 10px; width: 100%; max-width: 1000px; }
+        .card { 
+            flex: 1; background: var(--panel); border: 2px solid var(--border); 
+            border-radius: 8px; overflow: hidden; display: flex; flex-direction: column;
+            min-height: 80px; max-height: 180px;
         }
-        .log-entry.gesture { color: #4ade80; }
-        .log-entry.continuous { color: #60a5fa; }
-        .log-entry.spatial { color: #facc15; }
+        .card.active { border-color: var(--accent); }
+        .card-header { font-size: 9px; padding: 4px 8px; background: #21262d; font-weight: bold; color: #8b949e; text-transform: uppercase; }
+        .card-body { padding: 10px; font-size: 12px; white-space: pre-wrap; overflow-y: auto; flex: 1; color: #fff; }
+
+        .btn-choice-l { background: var(--danger); color: white; width: 100%; border-radius: 0; }
+        .btn-choice-r { background: var(--success); color: white; width: 100%; border-radius: 0; }
+
+        /* --- The Main Grid --- */
+        .grid { display: grid; flex: 1; gap: 1px; background: var(--border); overflow: hidden; }
         
-        .marker {
-            position: absolute;
-            width: 10px; height: 10px;
-            border-radius: 50%;
-            background: rgba(255,255,255,0.5);
-            transform: translate(-50%, -50%);
-            pointer-events: none;
+        /* Landscape Mode (The Shine) */
+        @media (orientation: landscape) {
+            .grid { grid-template-columns: 1fr 1fr 1fr; }
+            .decision-cards { flex-direction: row; }
+            .mobile-only { display: none; }
         }
+
+        /* Portrait Mode (The Start) */
+        @media (orientation: portrait) {
+            .grid { grid-template-columns: 1fr; }
+            .pane.context { display: none; } /* Hide sources to focus on assembly */
+            .decision-cards { flex-direction: column; }
+            .card { max-height: 120px; }
+            header .logo { font-size: 14px; }
+        }
+
+        .pane { display: flex; flex-direction: column; background: var(--bg); overflow: hidden; position: relative; }
+        .pane-label { padding: 6px 12px; font-size: 10px; font-weight: bold; background: var(--panel); border-bottom: 1px solid var(--border); color: #8b949e; }
+        .view { flex: 1; overflow-y: auto; scroll-behavior: smooth; }
+
+        /* --- Line Styling --- */
+        .line { display: flex; font-size: 11px; line-height: 18px; white-space: pre; border-bottom: 1px solid rgba(255,255,255,0.01); }
+        .ln { width: 30px; color: #484f58; text-align: right; padding-right: 6px; user-select: none; flex-shrink: 0; }
+        .txt { flex: 1; padding-left: 6px; overflow-x: auto; }
+        .hunk-active { background: rgba(88, 166, 255, 0.15) !important; outline: 1px solid var(--accent); }
+
+        /* --- Load Overlay --- */
+        .overlay { position: absolute; inset: 0; background: var(--bg); z-index: 500; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; gap: 15px; }
+        .load-box { background: var(--panel); padding: 20px; border-radius: 12px; border: 1px solid var(--border); width: 100%; max-width: 300px; }
+        .paste-input { width: 100%; height: 60px; background: #000; color: var(--accent); border: 1px solid var(--border); border-radius: 4px; padding: 8px; font-size: 11px; margin-top: 8px; outline: none; }
+        
+        .hidden { display: none !important; }
     </style>
 </head>
-<body class="h-screen w-screen flex flex-col">
+<body>
 
-    <div class="fixed top-0 left-0 right-0 p-2 bg-black/80 backdrop-blur z-50 flex justify-between items-center border-b border-gray-800">
-        <h1 class="font-bold text-sm text-gray-400">Gesture Engine v99</h1>
-        <div class="flex gap-2 text-xs">
-            <div>
-                <label>Tap (ms)</label>
-                <input type="range" id="param-tap" min="100" max="800" step="50" value="300" class="w-20">
-                <span id="val-tap" class="font-mono">300</span>
-            </div>
-            <div>
-                <label>Dist (px)</label>
-                <input type="range" id="param-dist" min="10" max="100" step="5" value="30" class="w-20">
-                <span id="val-dist" class="font-mono">30</span>
-            </div>
+<div class="overlay" id="loader">
+    <div style="font-weight: 800; color: var(--accent); font-size: 20px; margin-bottom: 10px;">COMMANDER LOAD</div>
+    <div class="load-box">
+        <label style="font-size: 12px; font-weight: bold;">SOURCE 1 (OLD)</label>
+        <input type="file" id="f1" style="font-size: 10px; margin-top: 5px;" onchange="checkInputs()">
+        <textarea id="p1" class="paste-input" placeholder="...or paste here" oninput="checkInputs()"></textarea>
+    </div>
+    <div class="load-box">
+        <label style="font-size: 12px; font-weight: bold;">SOURCE 2 (NEW)</label>
+        <input type="file" id="f2" style="font-size: 10px; margin-top: 5px;" onchange="checkInputs()">
+        <textarea id="p2" class="paste-input" placeholder="...or paste here" oninput="checkInputs()"></textarea>
+    </div>
+    <button id="start-btn" class="btn btn-success" style="width: 200px; padding: 15px;" onclick="initMerge()" disabled>START MERGING</button>
+</div>
+
+<header>
+    <div class="logo" style="font-weight: 800; color: var(--accent)">COMMANDER</div>
+    <div id="prog-stat" style="font-size: 11px; color: #8b949e">0/0 Diffs</div>
+    <button class="btn btn-sec" style="margin-left: auto" onclick="scrubAll()">Scrub Garbage</button>
+    <button class="btn btn-success" onclick="copyResult()">COPY</button>
+</header>
+
+<div class="hub">
+    <div class="decision-cards">
+        <div class="card" id="card-l">
+            <div class="card-header">LEFT (OLD)</div>
+            <div class="card-body" id="body-l"></div>
+            <button class="btn btn-choice-l" onclick="pick('l')">KEEP OLD</button>
+        </div>
+        <div class="card" id="card-r">
+            <div class="card-header">RIGHT (NEW)</div>
+            <div class="card-body" id="body-r"></div>
+            <button class="btn btn-choice-r" onclick="pick('r')">TAKE NEW</button>
         </div>
     </div>
-
-    <canvas id="hud-layer"></canvas>
-
-    <div id="touch-zone">
-        <div class="absolute inset-0 flex items-center justify-center pointer-events-none opacity-20">
-            <div class="text-center">
-                <p class="text-4xl font-bold">TOUCH AREA</p>
-                <p class="text-sm mt-2">Perform Swipes, Taps, Zigzags, Pinches</p>
-            </div>
-        </div>
+    <div style="display:flex; gap:8px; width: 100%; max-width: 1000px;">
+        <button class="btn btn-sec" style="flex:1" onclick="pick('both')">BOTH</button>
+        <button class="btn btn-sec" style="flex:1" onclick="pick('skip')">SKIP</button>
+        <button class="btn btn-sec" style="flex:1" onclick="undo()">UNDO</button>
     </div>
+</div>
 
-    <div id="console-area">
-        <div class="p-2 bg-gray-900 border-b border-gray-800 flex justify-between items-center">
-            <span class="font-bold text-xs uppercase text-gray-500">Event Log</span>
-            <button id="btn-clear" class="text-xs bg-gray-700 px-2 py-1 rounded hover:bg-gray-600">Clear</button>
-        </div>
-        <div id="log-content" class="flex-grow overflow-y-auto p-2 bg-black font-mono text-xs">
-            </div>
-        <div id="status-bar" class="p-2 bg-gray-800 text-xs font-bold text-white flex justify-between">
-            <span id="status-fingers">Fingers: 0</span>
-            <span id="status-continuous">State: Idle</span>
-        </div>
+<div class="grid">
+    <div class="pane context">
+        <div class="pane-label">SOURCE 1 CONTEXT</div>
+        <div class="view" id="v1"></div>
     </div>
+    <div class="pane context">
+        <div class="pane-label">SOURCE 2 CONTEXT</div>
+        <div class="view" id="v2"></div>
+    </div>
+    <div class="pane">
+        <div class="pane-label" style="color: var(--accent)">FINAL ASSEMBLY</div>
+        <div class="view" id="vf"></div>
+    </div>
+</div>
 
-    <script type="module">
-        import { GestureEngine } from './gestures.js';
+<script>
+    let s1 = "", s2 = "";
+    let hunks = [];
+    let hIdx = 0;
+    let finalStack = [];
 
-        // --- DOM Elements ---
-        const touchZone = document.getElementById('touch-zone');
-        const canvas = document.getElementById('hud-layer');
-        const ctx = canvas.getContext('2d');
-        const logContainer = document.getElementById('log-content');
-        const btnClear = document.getElementById('btn-clear');
-        const statFingers = document.getElementById('status-fingers');
-        const statState = document.getElementById('status-continuous');
+    function checkInputs() {
+        const ready = (document.getElementById('f1').files[0] || document.getElementById('p1').value) &&
+                      (document.getElementById('f2').files[0] || document.getElementById('p2').value);
+        document.getElementById('start-btn').disabled = !ready;
+    }
+
+    async function initMerge() {
+        const file1 = document.getElementById('f1').files[0];
+        const file2 = document.getElementById('f2').files[0];
+        s1 = file1 ? await file1.text() : document.getElementById('p1').value;
+        s2 = file2 ? await file2.text() : document.getElementById('p2').value;
+        document.getElementById('loader').classList.add('hidden');
+        runEngine();
+    }
+
+    function scrubAll() {
+        const clean = (t) => t.replace(/\/\*[\s\S]*?\*\/|\/\/.*/g, '').replace(/^\s*[\r\n]/gm, '').trim();
+        s1 = clean(s1); s2 = clean(s2);
+        hIdx = 0; finalStack = [];
+        runEngine();
+    }
+
+    function runEngine() {
+        const diff = Diff.diffLines(s1, s2);
+        hunks = [];
+        finalStack = [];
+        let i = 0;
         
-        // --- Canvas Sizing ---
-        function resizeCanvas() {
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight - 300; // Subtract console height
+        while (i < diff.length) {
+            if (!diff[i].added && !diff[i].removed) {
+                finalStack.push({ type: 'match', val: diff[i].value });
+                i++;
+            } else {
+                let hunk = { l: "", r: "" };
+                if (diff[i].removed) {
+                    hunk.l = diff[i].value;
+                    if (diff[i+1] && diff[i+1].added) { hunk.r = diff[i+1].value; i += 2; }
+                    else i++;
+                } else { hunk.r = diff[i].value; i++; }
+                hunks.push(hunk);
+            }
         }
-        window.addEventListener('resize', resizeCanvas);
-        resizeCanvas();
+        updateUI();
+    }
 
-        // --- Logging Helper ---
-        function log(msg, type = 'normal') {
-            const el = document.createElement('div');
-            el.className = `log-entry ${type}`;
-            const time = new Date().toLocaleTimeString().split(' ')[0];
-            el.innerHTML = `<span class="opacity-50">[${time}]</span> ${msg}`;
-            logContainer.prepend(el);
-            if(logContainer.children.length > 50) logContainer.lastChild.remove();
+    function updateUI() {
+        if (hIdx >= hunks.length) {
+            document.querySelector('.hub').innerHTML = "<div style='color:var(--success); font-weight:800; padding: 20px;'>✓ ASSEMBLY COMPLETE</div>";
+            renderViews();
+            return;
         }
 
-        btnClear.onclick = () => logContainer.innerHTML = '';
+        document.getElementById('body-l').textContent = hunks[hIdx].l || "--- NONE ---";
+        document.getElementById('body-r').textContent = hunks[hIdx].r || "--- NONE ---";
+        document.getElementById('prog-stat').innerText = `${hIdx + 1} / ${hunks.length} Differences`;
+        
+        renderViews();
+    }
 
-        // --- Trail Visualizer ---
-        let activePaths = {}; // pointerId -> array of points
-
-        function drawPaths() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            ctx.lineWidth = 3;
-            ctx.lineCap = 'round';
-            ctx.lineJoin = 'round';
-
-            Object.keys(activePaths).forEach(pid => {
-                const pts = activePaths[pid];
-                if(pts.length < 2) return;
-
-                ctx.beginPath();
-                ctx.moveTo(pts[0].x, pts[0].y);
-                for(let i=1; i<pts.length; i++) {
-                    ctx.lineTo(pts[i].x, pts[i].y);
-                }
-                
-                // Color based on finger index (roughly)
-                const colors = ['#4ade80', '#60a5fa', '#f87171', '#facc15'];
-                ctx.strokeStyle = colors[pid % colors.length];
-                ctx.stroke();
+    function renderViews() {
+        const draw = (id, text, activeVal) => {
+            const el = document.getElementById(id); if(!el) return;
+            el.innerHTML = '';
+            text.split('\n').forEach((t, i) => {
+                const line = document.createElement('div');
+                line.className = 'line';
+                if (activeVal && activeVal.includes(t)) line.classList.add('hunk-active');
+                line.innerHTML = `<div class="ln">${i+1}</div><div class="txt">${escape(t)}</div>`;
+                el.appendChild(line);
             });
-            requestAnimationFrame(drawPaths);
-        }
-        drawPaths();
-
-        // --- Initialize Engine ---
-        const config = {
-            tapDelay: 300,
-            swipeThreshold: 30,
-            debug: true
+            const active = el.querySelector('.hunk-active');
+            if (active) active.scrollIntoView({ behavior: 'smooth', block: 'center' });
         };
 
-        const engine = new GestureEngine(touchZone, config, {
-            onGesture: (data) => {
-                console.log("Gesture Detected:", data);
-                
-                let details = "";
-                if (data.meta) {
-                    // Extract interesting meta data for display
-                    const parts = [];
-                    if(data.meta.dir) parts.push(`Dir: ${data.meta.dir}`);
-                    if(data.meta.align) parts.push(`Align: ${data.meta.align}`); // Test Vertical/Diagonal
-                    if(data.meta.winding) parts.push(`Wind: ${data.meta.winding}`); // Test CW/CCW
-                    if(data.meta.subMode) parts.push(`Sub: ${data.meta.subMode}`);
-                    details = parts.length ? `(${parts.join(', ')})` : "";
-                }
+        const current = hunks[hIdx] || {l:'', r:''};
+        draw('v1', s1, current.l);
+        draw('v2', s2, current.r);
 
-                // Flash the screen slightly for spatial tap detection
-                if(data.id.includes('spatial')) {
-                    log(`🎯 <b>${data.name.toUpperCase()}</b> ${details}`, 'spatial');
-                } else {
-                    log(`✨ <b>${data.name.toUpperCase()}</b> ${details}`, 'gesture');
-                }
-            },
-            onContinuous: (data) => {
-                statState.textContent = `State: ${data.type.toUpperCase()}`;
-                
-                let val = "";
-                if(data.type === 'pinch') val = `Scale: ${data.scale.toFixed(2)}`;
-                if(data.type === 'twist') val = `Val: ${data.value}`;
-                if(data.type === 'squiggle') val = `Fingers: ${data.fingers}`;
-
-                log(`🌊 Continuous: ${data.type} [${val}]`, 'continuous');
-            }
+        const vf = document.getElementById('vf');
+        vf.innerHTML = '';
+        const built = finalStack.map(s => s.val).join('');
+        built.split('\n').forEach((t, i) => {
+            const line = document.createElement('div');
+            line.className = 'line';
+            line.innerHTML = `<div class="ln">${i+1}</div><div class="txt" style="color:var(--accent)">${escape(t)}</div>`;
+            vf.appendChild(line);
         });
+        vf.scrollTop = vf.scrollHeight;
+    }
 
-        // --- Settings Controls ---
-        const pTap = document.getElementById('param-tap');
-        const vTap = document.getElementById('val-tap');
-        const pDist = document.getElementById('param-dist');
-        const vDist = document.getElementById('val-dist');
-
-        pTap.oninput = (e) => {
-            config.tapDelay = parseInt(e.target.value);
-            vTap.textContent = config.tapDelay;
-            engine.config.tapDelay = config.tapDelay; // Direct update
-        };
-
-        pDist.oninput = (e) => {
-            config.swipeThreshold = parseInt(e.target.value);
-            vDist.textContent = config.swipeThreshold;
-            engine.config.swipeThreshold = config.swipeThreshold; // Direct update
-        };
-
-        // --- Raw Input Tracking for Visuals ---
-        // The engine handles logic, we handle visuals here
-        touchZone.addEventListener('pointerdown', (e) => {
-            activePaths[e.pointerId] = [{x: e.clientX, y: e.clientY}];
-            statFingers.textContent = `Fingers: ${Object.keys(activePaths).length}`;
-            touchZone.setPointerCapture(e.pointerId);
-        });
-
-        touchZone.addEventListener('pointermove', (e) => {
-            if(activePaths[e.pointerId]) {
-                activePaths[e.pointerId].push({x: e.clientX, y: e.clientY});
-            }
-        });
-
-        const endPointer = (e) => {
-            delete activePaths[e.pointerId];
-            statFingers.textContent = `Fingers: ${Object.keys(activePaths).length}`;
-            if(Object.keys(activePaths).length === 0) statState.textContent = "State: Idle";
-        };
-
-        touchZone.addEventListener('pointerup', endPointer);
-        touchZone.addEventListener('pointercancel', endPointer);
-
-        // --- Inject constraints ---
-        // We want to test EVERYTHING, so we pass a massive list of allowed gestures
-        // This simulates the engine being in a state where it accepts all complex shapes
-        const allPossibleGestures = [
-            'tap', 'double_tap', 'triple_tap', 'long_tap',
-            'tap_2f_any', 'tap_2f_vertical', 'tap_2f_horizontal', 'tap_2f_diagonal_se', 'tap_2f_diagonal_sw',
-            'double_tap_2f_any', 'triple_tap_2f_any', 
-            'swipe_any', 'swipe_up', 'swipe_down', 'swipe_left', 'swipe_right', 'swipe_nw', 'swipe_ne', 'swipe_sw', 'swipe_se',
-            'zigzag_any', 'zigzag_right', 'zigzag_left', 'long_zigzag_any',
-            'boomerang_any', 'boomerang_left', 'boomerang_right',
-            'motion_tap_spatial_any', 'motion_tap_spatial_up', 'motion_tap_spatial_down', 'motion_tap_spatial_left', 'motion_tap_spatial_right',
-            'triple_tap_spatial_line_any', 'triple_tap_spatial_corner_ne', 'triple_tap_spatial_corner_nw'
-        ];
+    function pick(choice) {
+        const h = hunks[hIdx];
+        let val = "";
+        if (choice === 'l') val = h.l;
+        else if (choice === 'r') val = h.r;
+        else if (choice === 'both') val = h.l + h.r;
         
-        // Use the public method to update allowed constraints
-        engine.updateAllowed(allPossibleGestures);
+        finalStack.push({ type: 'choice', val: val, idx: hIdx });
+        hIdx++;
+        updateUI();
+    }
 
-        log("Engine v99 Ready. Constraints loaded.", 'normal');
+    function undo() {
+        if (finalStack.length === 0) return;
+        const last = finalStack.pop();
+        if (last.type === 'match') return undo();
+        hIdx = last.idx;
+        updateUI();
+    }
 
-    </script>
+    function copyResult() {
+        const txt = finalStack.map(s => s.val).join('');
+        navigator.clipboard.writeText(txt);
+        alert("Assembled code copied!");
+    }
+
+    function escape(s) { let d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+</script>
 </body>
-    </html>
-    
+</html>
