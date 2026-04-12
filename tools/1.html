@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Nexus Forge // Sovereign APK Builder</title>
+    <title>Nexus Forge v1.3 // Sovereign APK</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <style>
         :root {
@@ -12,29 +12,23 @@
         }
         body {
             background: var(--bg); color: var(--text);
-            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; 
-            margin: 0; padding: 20px;
-            display: flex; flex-direction: column; align-items: center;
+            font-family: 'Segoe UI', system-ui, sans-serif; 
+            margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center;
         }
         .container {
             width: 100%; max-width: 500px; background: var(--panel);
             border: 1px solid #30363d; border-radius: 12px; padding: 24px;
             box-shadow: 0 10px 40px rgba(0,0,0,0.5);
         }
-        h1 { color: var(--gold); font-size: 1.1rem; letter-spacing: 2px; text-align: center; margin: 0 0 5px 0; }
+        h1 { color: var(--gold); font-size: 1.1rem; letter-spacing: 2px; text-align: center; margin: 0; }
         .sub-head { font-size: 9px; opacity: 0.5; text-align: center; margin-bottom: 20px; text-transform: uppercase; }
         
-        /* The Zone UI */
         .zone {
             border: 2px dashed #30363d; border-radius: 8px; 
             margin: 12px 0; transition: 0.2s; position: relative;
             background: rgba(0,0,0,0.2);
         }
-        .zone:active { transform: scale(0.98); border-color: var(--accent); }
-        .zone label {
-            display: block; padding: 25px 15px; text-align: center; 
-            cursor: pointer; font-size: 13px; font-weight: bold;
-        }
+        .zone label { display: block; padding: 25px 15px; text-align: center; cursor: pointer; font-size: 13px; font-weight: bold; }
         .zone input { position: absolute; opacity: 0; width: 1px; height: 1px; }
 
         input[type="text"] {
@@ -42,7 +36,6 @@
             border: 1px solid #30363d; background: var(--bg); color: #fff; 
             font-size: 14px; box-sizing: border-box; outline: none;
         }
-        input[type="text"]:focus { border-color: var(--accent); }
 
         button {
             width: 100%; padding: 14px; margin: 10px 0; border-radius: 6px;
@@ -50,21 +43,15 @@
             background: var(--accent); color: white; transition: 0.2s;
         }
         button:disabled { opacity: 0.3; cursor: not-allowed; }
-        button.gold { background: var(--gold); color: #000; margin-top: 20px; }
+        button.gold { background: var(--gold); color: #000; margin-top: 15px; }
+        
+        #dl-link { display: none; background: var(--success); color: #000; text-decoration: none; text-align: center; padding: 14px; border-radius: 6px; font-weight: bold; font-size: 13px; margin-top: 10px; }
 
-        #file-preview {
-            font-size: 10px; color: var(--accent); max-height: 80px; 
-            overflow-y: auto; margin: 5px 0; padding: 0 5px;
-        }
+        #file-preview { font-size: 10px; color: var(--accent); margin: 5px 0; }
         #status-log {
             height: 140px; overflow-y: auto; background: #000;
             padding: 12px; font-size: 10px; border-radius: 6px; color: var(--success);
-            border: 1px solid #30363d; margin-top: 20px; white-space: pre-wrap;
-            font-family: 'Consolas', 'Monaco', monospace;
-        }
-        .key-badge {
-            font-size: 10px; text-align: center; color: var(--gold);
-            background: rgba(210, 153, 34, 0.1); padding: 5px; border-radius: 4px;
+            border: 1px solid #30363d; margin-top: 20px; white-space: pre-wrap; font-family: monospace;
         }
     </style>
 </head>
@@ -72,176 +59,110 @@
 
 <div class="container">
     <h1>NEXUS // SOVEREIGN FORGE</h1>
-    <div class="sub-head">Independently Manufacturing Binary Intelligence</div>
+    <div class="sub-head">V1.3 // Pixel 7 Pro Optimized</div>
 
-    <div id="key-status" class="key-badge">Identity Status: Unknown</div>
-    <button onclick="Forge.generateIdentity()">FORGE NEW DEVELOPER IDENTITY</button>
-
-    <hr style="border: 0; border-top: 1px solid #30363d; margin: 15px 0;">
+    <button onclick="Forge.generateIdentity()">FORGE DEVELOPER IDENTITY</button>
 
     <div class="zone">
-        <label for="apk-input">
-            <span id="apk-label">📥 LOAD WRAPPER SEED (.APK)</span>
-            <input type="file" id="apk-input" accept=".apk" onchange="Forge.loadSeed(this.files[0])">
-        </label>
+        <label for="apk-input"><span id="apk-label">📥 LOAD WRAPPER SEED (.APK)</span>
+            <input type="file" id="apk-input" accept=".apk" onchange="Forge.loadSeed(this.files[0])"></label>
     </div>
 
     <div class="zone">
-        <label for="files-input">
-            <span id="files-label">📁 STAGE PROJECT FILES (HTML/JS/CSS)</span>
-            <input type="file" id="files-input" multiple onchange="Forge.loadProject(this.files)">
-        </label>
+        <label for="files-input"><span id="files-label">📁 STAGE PROJECT FILES</span>
+            <input type="file" id="files-input" multiple onchange="Forge.loadProject(this.files)"></label>
     </div>
     <div id="file-preview"></div>
 
-    <input type="text" id="app-name" placeholder="App Display Name (e.g. OmniTracker)">
+    <input type="text" id="app-name" placeholder="App Display Name">
     
     <button class="gold" id="forge-btn" onclick="Forge.build()" disabled>⚡ INITIATE FORGE SEQUENCE</button>
+    <a id="dl-link">⬇️ DOWNLOAD FORGED APK</a>
 
-    <div id="status-log">Ready. Waiting for user input...</div>
+    <div id="status-log">Ready. System status: Nominal.</div>
 </div>
 
 <script>
 const Forge = {
-    seed: null,
-    projectFiles: [],
-    privateKey: null,
-
-    log(msg) {
-        const log = document.getElementById('status-log');
-        log.innerText += `\n> ${msg}`;
-        log.scrollTop = log.scrollHeight;
-    },
+    seed: null, projectFiles: [], privateKey: null,
+    log(msg) { const log = document.getElementById('status-log'); log.innerText += `\n> ${msg}`; log.scrollTop = log.scrollHeight; },
 
     async generateIdentity() {
-        this.log("Forging RSA-2048 Identity...");
-        const pair = await crypto.subtle.generateKey(
-            { name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: new Uint8Array([1,0,1]), hash: "SHA-256" },
-            true, ["sign", "verify"]
-        );
+        this.log("Generating RSA-2048 Identity...");
+        const pair = await crypto.subtle.generateKey({ name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: new Uint8Array([1,0,1]), hash: "SHA-256" }, true, ["sign", "verify"]);
         this.privateKey = pair.privateKey;
         const exported = await crypto.subtle.exportKey("pkcs8", pair.privateKey);
         localStorage.setItem('nexus_priv_key', btoa(String.fromCharCode(...new Uint8Array(exported))));
-        document.getElementById('key-status').innerText = "Identity: SOVEREIGN (AUTHENTICATED)";
-        this.log("Identity Key locked in LocalStorage.");
+        this.log("Identity Locked.");
     },
 
-    loadSeed(file) {
-        if (!file) return;
-        this.seed = file;
-        document.getElementById('apk-label').innerText = `📦 SEED: ${file.name.toUpperCase()}`;
-        document.getElementById('apk-label').style.color = "var(--success)";
-        this.log(`Seed verified: ${(file.size / 1024 / 1024).toFixed(2)} MB`);
-        this.checkReady();
-    },
+    loadSeed(file) { if (!file) return; this.seed = file; document.getElementById('apk-label').innerText = `📦 SEED: ${file.name.toUpperCase()}`; this.checkReady(); },
 
-    loadProject(files) {
-        if (!files || files.length === 0) return;
-        this.projectFiles = Array.from(files);
-        document.getElementById('files-label').innerText = `📂 ${files.length} FILES STAGED`;
-        document.getElementById('files-label').style.color = "var(--success)";
-        document.getElementById('file-preview').innerHTML = this.projectFiles.map(f => `• ${f.name}`).join('<br>');
-        this.log(`Staged ${files.length} assets.`);
-        this.checkReady();
-    },
+    loadProject(files) { if (!files || files.length === 0) return; this.projectFiles = Array.from(files); document.getElementById('files-label').innerText = `📂 ${files.length} ASSETS STAGED`; document.getElementById('file-preview').innerHTML = this.projectFiles.map(f => `• ${f.name}`).join('<br>'); this.checkReady(); },
 
-    checkReady() {
-        if (this.seed && this.projectFiles.length > 0) {
-            document.getElementById('forge-btn').disabled = false;
-        }
-    },
+    checkReady() { if (this.seed && this.projectFiles.length > 0) document.getElementById('forge-btn').disabled = false; },
 
     async build() {
         try {
             const appName = document.getElementById('app-name').value || "NexusApp";
-            this.log(`Opening binary container for "${appName}"...`);
-
             const zip = await JSZip.loadAsync(this.seed);
             
-            // Asset Injection
             for (const file of this.projectFiles) {
                 const content = await file.arrayBuffer();
                 zip.file(`assets/www/${file.name}`, content);
             }
-            this.log(`Successfully injected project into /assets/www/`);
 
-            // Binary Patching (resources.arsc)
             const resFile = zip.file("resources.arsc");
             if (resFile) {
                 let bytes = await resFile.async("uint8array");
                 const search = "Nexus_Template_Label";
                 const searchBytes = new TextEncoder().encode(search);
                 const replaceBytes = new TextEncoder().encode(appName.padEnd(search.length, ' '));
-
                 for (let i = 0; i < bytes.length - searchBytes.length; i++) {
-                    let match = true;
-                    for (let j = 0; j < searchBytes.length; j++) {
-                        if (bytes[i + j] !== searchBytes[j]) { match = false; break; }
-                    }
-                    if (match) {
-                        bytes.set(replaceBytes, i);
-                        this.log("Binary header patched.");
-                        break;
-                    }
+                    if (searchBytes.every((b, j) => bytes[i+j] === b)) { bytes.set(replaceBytes, i); break; }
                 }
                 zip.file("resources.arsc", bytes);
             }
 
-            // Cryptographic Signing
-            this.log("Applying v1 JAR signatures...");
             await this.signApk(zip);
+            this.log("Binary Sealed.");
 
-            this.log("Finalizing binary structure...");
             const finalBlob = await zip.generateAsync({type: "blob", mimeType: "application/vnd.android.package-archive"});
+            const url = URL.createObjectURL(finalBlob);
             
-            const link = document.createElement('a');
-            link.href = URL.createObjectURL(finalBlob);
-            link.download = `${appName.replace(/\s+/g, '_')}.apk`;
-            link.click();
-            this.log("DOWNLOAD TRIGGERED. INSTALL TO MOBILE.");
+            // UI Update for Pixel Chrome
+            const dl = document.getElementById('dl-link');
+            dl.href = url;
+            dl.download = `${appName.replace(/\s+/g, '_')}.apk`;
+            dl.style.display = 'block';
+            
+            this.log("FORGE COMPLETE. Tap green button above.");
+            dl.click(); // Auto-try
 
-        } catch (e) {
-            this.log(`!! ERROR: ${e.message}`);
-        }
+        } catch (e) { this.log(`!! ERROR: ${e.message}`); }
     },
 
     async signApk(zip) {
-        let privKey = this.privateKey;
-        if (!privKey) {
-            const saved = localStorage.getItem('nexus_priv_key');
-            if (!saved) throw new Error("No Identity Key found.");
-            const keyBuf = Uint8Array.from(atob(saved), c => c.charCodeAt(0));
-            privKey = await crypto.subtle.importKey("pkcs8", keyBuf, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["sign"]);
-        }
+        const saved = localStorage.getItem('nexus_priv_key');
+        if (!saved) throw new Error("No Identity Key found.");
+        const keyBuf = Uint8Array.from(atob(saved), c => c.charCodeAt(0));
+        const privKey = await crypto.subtle.importKey("pkcs8", keyBuf, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["sign"]);
 
-        // 1. MANIFEST.MF
-        let manifest = "Manifest-Version: 1.0\r\nCreated-By: Nexus Sovereign Forge\r\n\r\n";
+        let manifest = "Manifest-Version: 1.0\r\nCreated-By: Nexus Forge\r\n\r\n";
         const entries = Object.entries(zip.files).filter(([n, f]) => !f.dir && !n.startsWith('META-INF/'));
-        
         for (const [name, file] of entries) {
             const data = await file.async("uint8array");
             const hash = await crypto.subtle.digest("SHA-256", data);
-            const base64 = btoa(String.fromCharCode(...new Uint8Array(hash)));
-            manifest += `Name: ${name}\r\nSHA-256-Digest: ${base64}\r\n\r\n`;
+            manifest += `Name: ${name}\r\nSHA-256-Digest: ${btoa(String.fromCharCode(...new Uint8Array(hash)))}\r\n\r\n`;
         }
         zip.file("META-INF/MANIFEST.MF", manifest);
 
-        // 2. CERT.SF
         const mHash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(manifest));
-        const mBase64 = btoa(String.fromCharCode(...new Uint8Array(mHash)));
-        let sf = `Signature-Version: 1.0\r\nSHA-256-Digest-Manifest: ${mBase64}\r\n\r\n`;
+        let sf = `Signature-Version: 1.0\r\nSHA-256-Digest-Manifest: ${btoa(String.fromCharCode(...new Uint8Array(mHash)))}\r\n\r\n`;
         zip.file("META-INF/CERT.SF", sf);
 
-        // 3. CERT.RSA
         const sig = await crypto.subtle.sign("RSASSA-PKCS1-v1_5", privKey, new TextEncoder().encode(sf));
         zip.file("META-INF/CERT.RSA", sig);
-        this.log("Sovereign seal applied.");
-    }
-};
-
-window.onload = () => {
-    if (localStorage.getItem('nexus_priv_key')) {
-        document.getElementById('key-status').innerText = "Identity: SOVEREIGN (READY)";
     }
 };
 </script>
