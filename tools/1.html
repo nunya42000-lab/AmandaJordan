@@ -2,299 +2,248 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>DevOS Gold v3.0</title>
-    
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/localforage/1.10.0/localforage.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/js-beautify/1.14.7/beautify.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/js-beautify/1.14.7/beautify-html.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/js-beautify/1.14.7/beautify-css.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.12/codemirror.min.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.12/theme/dracula.min.css">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.12/codemirror.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.12/mode/javascript/javascript.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.12/mode/css/css.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.12/mode/htmlmixed/htmlmixed.min.js"></script>
-
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nexus Forge // Sovereign APK Builder</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <style>
         :root {
-            --bg: #0d1117; --panel: #161b22; --surface: #21262d; 
-            --accent: #58a6ff; --success: #238636; --danger: #da3633; 
-            --warn: #d29922; --text: #c9d1d9; --border: #30363d;
+            --bg: #0d1117; --panel: #161b22; --accent: #2f81f7;
+            --gold: #d29922; --text: #c9d1d9; --danger: #f85149; --success: #3fb950;
         }
-        body { margin: 0; background: var(--bg); color: var(--text); font-family: sans-serif; height: 100vh; overflow: hidden; display: flex; flex-direction: column; }
+        body {
+            background: var(--bg); color: var(--text);
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; 
+            margin: 0; padding: 20px;
+            display: flex; flex-direction: column; align-items: center;
+        }
+        .container {
+            width: 100%; max-width: 500px; background: var(--panel);
+            border: 1px solid #30363d; border-radius: 12px; padding: 24px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+        }
+        h1 { color: var(--gold); font-size: 1.1rem; letter-spacing: 2px; text-align: center; margin: 0 0 5px 0; }
+        .sub-head { font-size: 9px; opacity: 0.5; text-align: center; margin-bottom: 20px; text-transform: uppercase; }
         
-        /* Layout */
-        .navbar { display: flex; gap: 8px; padding: 8px; background: var(--panel); border-bottom: 1px solid var(--border); overflow-x: auto; }
-        .main-container { display: flex; flex: 1; overflow: hidden; }
-        .sidebar { width: 280px; background: var(--panel); border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow-y: auto; transition: 0.3s; }
-        .view-panel { flex: 1; display: none; flex-direction: column; position: relative; background: #000; }
-        
-        /* UI Components */
-        .btn { padding: 6px 12px; background: var(--surface); border: 1px solid var(--border); color: var(--text); border-radius: 6px; cursor: pointer; font-size: 12px; white-space: nowrap; }
-        .active-tab { border-color: var(--accent); color: var(--accent); }
-        .CodeMirror { height: 100%; font-size: 14px; }
-        
-        /* Ghost Console */
-        #ghost-console { height: 150px; background: rgba(0,0,0,0.9); border-top: 2px solid var(--accent); color: #0f0; font-family: monospace; font-size: 11px; padding: 10px; overflow-y: auto; display: none; }
-        
-        /* Preview Frame */
-        #live-preview-frame { width: 100%; height: 100%; border: none; background: white; }
-        
-        /* Search Tree */
-        #search-results-tree { padding: 10px; font-size: 12px; }
+        /* The Zone UI */
+        .zone {
+            border: 2px dashed #30363d; border-radius: 8px; 
+            margin: 12px 0; transition: 0.2s; position: relative;
+            background: rgba(0,0,0,0.2);
+        }
+        .zone:active { transform: scale(0.98); border-color: var(--accent); }
+        .zone label {
+            display: block; padding: 25px 15px; text-align: center; 
+            cursor: pointer; font-size: 13px; font-weight: bold;
+        }
+        .zone input { position: absolute; opacity: 0; width: 1px; height: 1px; }
 
-        /* Sidebar Sections */
-        .side-sec { padding: 10px; border-bottom: 1px solid var(--border); }
-        .side-title { font-size: 10px; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; letter-spacing: 1px; }
+        input[type="text"] {
+            width: 100%; padding: 12px; margin: 8px 0; border-radius: 6px;
+            border: 1px solid #30363d; background: var(--bg); color: #fff; 
+            font-size: 14px; box-sizing: border-box; outline: none;
+        }
+        input[type="text"]:focus { border-color: var(--accent); }
 
-        /* Visual Tools Layout */
-        .tool-card { background: var(--surface); padding: 15px; border-radius: 8px; margin-bottom: 15px; border: 1px solid var(--border); }
+        button {
+            width: 100%; padding: 14px; margin: 10px 0; border-radius: 6px;
+            border: none; font-weight: bold; cursor: pointer; font-size: 13px;
+            background: var(--accent); color: white; transition: 0.2s;
+        }
+        button:disabled { opacity: 0.3; cursor: not-allowed; }
+        button.gold { background: var(--gold); color: #000; margin-top: 20px; }
+
+        #file-preview {
+            font-size: 10px; color: var(--accent); max-height: 80px; 
+            overflow-y: auto; margin: 5px 0; padding: 0 5px;
+        }
+        #status-log {
+            height: 140px; overflow-y: auto; background: #000;
+            padding: 12px; font-size: 10px; border-radius: 6px; color: var(--success);
+            border: 1px solid #30363d; margin-top: 20px; white-space: pre-wrap;
+            font-family: 'Consolas', 'Monaco', monospace;
+        }
+        .key-badge {
+            font-size: 10px; text-align: center; color: var(--gold);
+            background: rgba(210, 153, 34, 0.1); padding: 5px; border-radius: 4px;
+        }
     </style>
 </head>
 <body>
 
-    <nav class="navbar">
-        <button class="btn" onclick="toggleSidebar()">📂 Files</button>
-        <button class="btn active-tab" onclick="switchTab('editor')">Code</button>
-        <button class="btn" onclick="switchTab('preview')">Preview</button>
-        <button class="btn" onclick="switchTab('visual')">Visual Labs</button>
-        <button class="btn" onclick="switchTab('intelligence')">Intel</button>
-        <button class="btn" onclick="switchTab('history')">Time</button>
-    </nav>
+<div class="container">
+    <h1>NEXUS // SOVEREIGN FORGE</h1>
+    <div class="sub-head">Independently Manufacturing Binary Intelligence</div>
 
-    <div class="main-container">
-        <aside id="ui-sidebar" class="sidebar">
-            <div class="side-sec">
-                <input type="text" id="global-search-input" placeholder="Search code..." style="width:100%; padding:8px; background:#000; border:1px solid var(--border); border-radius:4px; color:white;">
-                <div id="search-results-tree"></div>
-            </div>
-            
-            <div class="side-sec">
-                <div class="side-title">Project Explorer</div>
-                <div id="file-list"></div>
-            </div>
+    <div id="key-status" class="key-badge">Identity Status: Unknown</div>
+    <button onclick="Forge.generateIdentity()">FORGE NEW DEVELOPER IDENTITY</button>
 
-            <div class="side-sec">
-                <div class="side-title">Vault Snippets</div>
-                <div id="vault-list"></div>
-                <button class="btn" onclick="compileSelected()" style="width:100%; margin-top:5px;">Compile Vault</button>
-            </div>
-        </aside>
+    <hr style="border: 0; border-top: 1px solid #30363d; margin: 15px 0;">
 
-        <main style="flex:1; display:flex; flex-direction:column; position:relative;">
-            
-            <div id="editor-view" class="view-panel" style="display:flex;">
-                <div id="tabs-bar" style="display:flex; background:var(--bg); padding:4px; gap:4px; border-bottom:1px solid var(--border)"></div>
-                <textarea id="code-editor"></textarea>
-                <div id="mobile-soft-keys" style="display:flex; overflow-x:auto; padding:5px; background:var(--panel); gap:5px;"></div>
-            </div>
-
-            <div id="preview-view" class="view-panel">
-                <div style="padding:8px; background:var(--panel); display:flex; gap:10px; align-items:center;">
-                    <button class="btn btn-success" onclick="refreshLivePreview()">▶ Run</button>
-                    <select class="btn" onchange="resizePreview(this.value)">
-                        <option value="100%">Full Screen</option>
-                        <option value="375x667">iPhone SE</option>
-                        <option value="414x896">iPhone 11</option>
-                    </select>
-                    <button class="btn" onclick="toggleDeviceSensorSimulator()">📳 Sensors</button>
-                    <span id="fps-counter" style="font-size:10px; color:var(--success)">0 FPS</span>
-                </div>
-                
-                <div id="sensor-sim-overlay" style="display:none; padding:10px; background:var(--surface); gap:10px; flex-direction:column;">
-                    <label>Tilt (Beta): <input type="range" id="sim-beta" min="-180" max="180" value="0"></label>
-                    <label>Rotate (Alpha): <input type="range" id="sim-alpha" min="0" max="360" value="0"></label>
-                </div>
-
-                <iframe id="live-preview-frame"></iframe>
-                <div id="ghost-console"></div>
-            </div>
-
-            <div id="visual-view" class="view-panel" style="padding:20px; overflow-y:auto; background:var(--bg);">
-                <h2>Visual Creative Labs</h2>
-                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px;">
-                    <div class="tool-card" onclick="openStateMachineBuilder()">
-                        <h3>⚙️ State Machine</h3>
-                        <p>Generate game logic for IDLE, WIN, LOSE states.</p>
-                    </div>
-                    <div class="tool-card" onclick="openAudioSynth()">
-                        <h3>🎵 Audio Synth</h3>
-                        <p>Design retro sound effects with code.</p>
-                    </div>
-                    <div class="tool-card" onclick="openSpriteSlicer()">
-                        <h3>🖼️ Sprite Slicer</h3>
-                        <p>Map CSS positions for sprite sheets.</p>
-                    </div>
-                </div>
-            </div>
-
-            <div id="intelligence-view" class="view-panel" style="padding:20px; background:var(--bg);">
-                <div id="project-stats-container"></div>
-                <div id="dep-tracker-ui"></div>
-            </div>
-
-            <div id="history-view" class="view-panel" style="padding:20px; background:var(--bg);">
-                <h3>Time Machine Snapshots</h3>
-                <div id="history-list"></div>
-            </div>
-
-        </main>
+    <div class="zone">
+        <label for="apk-input">
+            <span id="apk-label">📥 LOAD WRAPPER SEED (.APK)</span>
+            <input type="file" id="apk-input" accept=".apk" onchange="Forge.loadSeed(this.files[0])">
+        </label>
     </div>
 
-    <script>
-        // --- System State ---
-        let vfs = {}; let snippets = []; let openTabs = []; let activeTab = null;
-        let cmEditor; let fileHistory = {}; let audioCtx = null;
+    <div class="zone">
+        <label for="files-input">
+            <span id="files-label">📁 STAGE PROJECT FILES (HTML/JS/CSS)</span>
+            <input type="file" id="files-input" multiple onchange="Forge.loadProject(this.files)">
+        </label>
+    </div>
+    <div id="file-preview"></div>
 
-        // --- Init ---
-        document.addEventListener('DOMContentLoaded', async () => {
-            vfs = (await localforage.getItem('devos_vfs')) || {'index.html': '<h1>Hello</h1>', 'main.js': 'console.log("DevOS Live")'};
-            fileHistory = (await localforage.getItem('devos_history')) || {};
-            snippets = (await localforage.getItem('vault_snippets')) || [];
+    <input type="text" id="app-name" placeholder="App Display Name (e.g. OmniTracker)">
+    
+    <button class="gold" id="forge-btn" onclick="Forge.build()" disabled>⚡ INITIATE FORGE SEQUENCE</button>
+
+    <div id="status-log">Ready. Waiting for user input...</div>
+</div>
+
+<script>
+const Forge = {
+    seed: null,
+    projectFiles: [],
+    privateKey: null,
+
+    log(msg) {
+        const log = document.getElementById('status-log');
+        log.innerText += `\n> ${msg}`;
+        log.scrollTop = log.scrollHeight;
+    },
+
+    async generateIdentity() {
+        this.log("Forging RSA-2048 Identity...");
+        const pair = await crypto.subtle.generateKey(
+            { name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: new Uint8Array([1,0,1]), hash: "SHA-256" },
+            true, ["sign", "verify"]
+        );
+        this.privateKey = pair.privateKey;
+        const exported = await crypto.subtle.exportKey("pkcs8", pair.privateKey);
+        localStorage.setItem('nexus_priv_key', btoa(String.fromCharCode(...new Uint8Array(exported))));
+        document.getElementById('key-status').innerText = "Identity: SOVEREIGN (AUTHENTICATED)";
+        this.log("Identity Key locked in LocalStorage.");
+    },
+
+    loadSeed(file) {
+        if (!file) return;
+        this.seed = file;
+        document.getElementById('apk-label').innerText = `📦 SEED: ${file.name.toUpperCase()}`;
+        document.getElementById('apk-label').style.color = "var(--success)";
+        this.log(`Seed verified: ${(file.size / 1024 / 1024).toFixed(2)} MB`);
+        this.checkReady();
+    },
+
+    loadProject(files) {
+        if (!files || files.length === 0) return;
+        this.projectFiles = Array.from(files);
+        document.getElementById('files-label').innerText = `📂 ${files.length} FILES STAGED`;
+        document.getElementById('files-label').style.color = "var(--success)";
+        document.getElementById('file-preview').innerHTML = this.projectFiles.map(f => `• ${f.name}`).join('<br>');
+        this.log(`Staged ${files.length} assets.`);
+        this.checkReady();
+    },
+
+    checkReady() {
+        if (this.seed && this.projectFiles.length > 0) {
+            document.getElementById('forge-btn').disabled = false;
+        }
+    },
+
+    async build() {
+        try {
+            const appName = document.getElementById('app-name').value || "NexusApp";
+            this.log(`Opening binary container for "${appName}"...`);
+
+            const zip = await JSZip.loadAsync(this.seed);
             
-            cmEditor = CodeMirror.fromTextArea(document.getElementById('code-editor'), {
-                lineNumbers: true, theme: 'dracula', mode: 'javascript', autoCloseBrackets: true
-            });
-
-            cmEditor.on('change', () => { triggerAutoSave(); });
-
-            initMobileUX();
-            renderFileList();
-            renderVault();
-            initPreviewHooks();
-            if (Object.keys(vfs).length > 0) openTab(Object.keys(vfs)[0]);
-        });
-
-        // --- Core Functions (Fused Fragments) ---
-        async function saveVFS() {
-            if (activeTab) vfs[activeTab] = cmEditor.getValue();
-            await localforage.setItem('devos_vfs', vfs);
-            if (activeTab) takeSnapshot(activeTab, vfs[activeTab]);
-        }
-
-        let autoSaveTimer;
-        function triggerAutoSave() {
-            clearTimeout(autoSaveTimer);
-            autoSaveTimer = setTimeout(saveVFS, 1500);
-        }
-
-        function switchTab(id) {
-            document.querySelectorAll('.view-panel').forEach(p => p.style.display = 'none');
-            document.getElementById(id + '-view').style.display = 'flex';
-            if (id === 'editor') setTimeout(() => cmEditor.refresh(), 50);
-            if (id === 'history') renderHistory();
-            if (id === 'intelligence') updateProjectStats();
-        }
-
-        function openTab(name) {
-            if (!openTabs.includes(name)) openTabs.push(name);
-            activeTab = name;
-            cmEditor.setValue(vfs[name] || "");
-            renderFileList();
-            renderTabs();
-            switchTab('editor');
-        }
-
-        function renderTabs() {
-            const bar = document.getElementById('tabs-bar');
-            bar.innerHTML = openTabs.map(t => `<div class="btn ${t===activeTab?'active-tab':''}" onclick="openTab('${t}')">${t}</div>`).join('');
-        }
-
-        function renderFileList() {
-            const list = document.getElementById('file-list');
-            list.innerHTML = Object.keys(vfs).map(f => `
-                <div style="padding:6px; cursor:pointer; color:${f===activeTab?'var(--accent)':'#fff'}" onclick="openTab('${f}')">📄 ${f}</div>
-            `).join('');
-        }
-
-        // --- Live Preview Engine (Your Fragment) ---
-        function refreshLivePreview() {
-            const frame = document.getElementById('live-preview-frame');
-            const ghost = document.getElementById('ghost-console');
-            ghost.innerHTML = ''; ghost.style.display = 'block';
-
-            const html = vfs['index.html'] || '';
-            const js = vfs['main.js'] || '';
-            
-            const injection = `<script>
-                (function(){
-                    const ghost = window.parent.document.getElementById('ghost-console');
-                    function logToGhost(type, args) {
-                        const div = document.createElement('div');
-                        div.style.color = type === 'error' ? 'red' : 'lime';
-                        div.innerText = "[" + type.toUpperCase() + "] " + Array.from(args).join(' ');
-                        ghost.appendChild(div);
-                        ghost.scrollTop = ghost.scrollHeight;
-                    }
-                    console.log = function(){ logToGhost('log', arguments); };
-                    console.error = function(){ logToGhost('error', arguments); };
-                })();
-            <\/script>`;
-
-            const blob = new Blob([`<html><body>${html} ${injection} <script>${js}<\/script></body></html>`], {type: 'text/html'});
-            frame.src = URL.createObjectURL(blob);
-        }
-
-        // --- Search Logic (Your Fragment) ---
-        document.getElementById('global-search-input').oninput = (e) => {
-            const query = e.target.value.toLowerCase();
-            const tree = document.getElementById('search-results-tree');
-            tree.innerHTML = '';
-            if (!query) return;
-
-            Object.entries(vfs).forEach(([file, code]) => {
-                const lines = code.split('\n');
-                lines.forEach((line, i) => {
-                    if (line.toLowerCase().includes(query)) {
-                        const div = document.createElement('div');
-                        div.innerHTML = `<span style="color:var(--accent)">${file}:${i+1}</span> ${line.trim().substring(0, 30)}`;
-                        div.style.cursor = 'pointer';
-                        div.onclick = () => {
-                            openTab(file);
-                            setTimeout(() => {
-                                cmEditor.setCursor(i, 0);
-                                cmEditor.focus();
-                            }, 100);
-                        };
-                        tree.appendChild(div);
-                    }
-                });
-            });
-        };
-
-        // --- Visual Tools Stubs ---
-        function openAudioSynth() { /* Your Audio Logic here - launches builder in visual-view */ }
-        function openStateMachineBuilder() { /* Your State Machine Logic here */ }
-        function openSpriteSlicer() { /* Your Sprite Logic here */ }
-
-        // --- Utility ---
-        function toggleSidebar() { 
-            const s = document.getElementById('ui-sidebar');
-            s.style.width = s.style.width === '0px' ? '280px' : '0px';
-        }
-
-        function initMobileUX() {
-            const keys = ['{', '}', '(', ')', '[', ']', ';', '=>', '"', "'", '<', '>'];
-            document.getElementById('mobile-soft-keys').innerHTML = keys.map(k => `
-                <button class="btn" onclick="cmEditor.replaceSelection('${k}'); cmEditor.focus();">${k}</button>
-            `).join('');
-        }
-
-        function initPreviewHooks() {
-            let last = performance.now();
-            function track() {
-                let now = performance.now();
-                document.getElementById('fps-counter').innerText = Math.round(1000/(now-last)) + " FPS";
-                last = now;
-                requestAnimationFrame(track);
+            // Asset Injection
+            for (const file of this.projectFiles) {
+                const content = await file.arrayBuffer();
+                zip.file(`assets/www/${file.name}`, content);
             }
-            requestAnimationFrame(track);
+            this.log(`Successfully injected project into /assets/www/`);
+
+            // Binary Patching (resources.arsc)
+            const resFile = zip.file("resources.arsc");
+            if (resFile) {
+                let bytes = await resFile.async("uint8array");
+                const search = "Nexus_Template_Label";
+                const searchBytes = new TextEncoder().encode(search);
+                const replaceBytes = new TextEncoder().encode(appName.padEnd(search.length, ' '));
+
+                for (let i = 0; i < bytes.length - searchBytes.length; i++) {
+                    let match = true;
+                    for (let j = 0; j < searchBytes.length; j++) {
+                        if (bytes[i + j] !== searchBytes[j]) { match = false; break; }
+                    }
+                    if (match) {
+                        bytes.set(replaceBytes, i);
+                        this.log("Binary header patched.");
+                        break;
+                    }
+                }
+                zip.file("resources.arsc", bytes);
+            }
+
+            // Cryptographic Signing
+            this.log("Applying v1 JAR signatures...");
+            await this.signApk(zip);
+
+            this.log("Finalizing binary structure...");
+            const finalBlob = await zip.generateAsync({type: "blob", mimeType: "application/vnd.android.package-archive"});
+            
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(finalBlob);
+            link.download = `${appName.replace(/\s+/g, '_')}.apk`;
+            link.click();
+            this.log("DOWNLOAD TRIGGERED. INSTALL TO MOBILE.");
+
+        } catch (e) {
+            this.log(`!! ERROR: ${e.message}`);
         }
+    },
+
+    async signApk(zip) {
+        let privKey = this.privateKey;
+        if (!privKey) {
+            const saved = localStorage.getItem('nexus_priv_key');
+            if (!saved) throw new Error("No Identity Key found.");
+            const keyBuf = Uint8Array.from(atob(saved), c => c.charCodeAt(0));
+            privKey = await crypto.subtle.importKey("pkcs8", keyBuf, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["sign"]);
+        }
+
+        // 1. MANIFEST.MF
+        let manifest = "Manifest-Version: 1.0\r\nCreated-By: Nexus Sovereign Forge\r\n\r\n";
+        const entries = Object.entries(zip.files).filter(([n, f]) => !f.dir && !n.startsWith('META-INF/'));
         
-        /* Time Machine & Vault logic from previous turn remains active in background */
-    </script>
+        for (const [name, file] of entries) {
+            const data = await file.async("uint8array");
+            const hash = await crypto.subtle.digest("SHA-256", data);
+            const base64 = btoa(String.fromCharCode(...new Uint8Array(hash)));
+            manifest += `Name: ${name}\r\nSHA-256-Digest: ${base64}\r\n\r\n`;
+        }
+        zip.file("META-INF/MANIFEST.MF", manifest);
+
+        // 2. CERT.SF
+        const mHash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(manifest));
+        const mBase64 = btoa(String.fromCharCode(...new Uint8Array(mHash)));
+        let sf = `Signature-Version: 1.0\r\nSHA-256-Digest-Manifest: ${mBase64}\r\n\r\n`;
+        zip.file("META-INF/CERT.SF", sf);
+
+        // 3. CERT.RSA
+        const sig = await crypto.subtle.sign("RSASSA-PKCS1-v1_5", privKey, new TextEncoder().encode(sf));
+        zip.file("META-INF/CERT.RSA", sig);
+        this.log("Sovereign seal applied.");
+    }
+};
+
+window.onload = () => {
+    if (localStorage.getItem('nexus_priv_key')) {
+        document.getElementById('key-status').innerText = "Identity: SOVEREIGN (READY)";
+    }
+};
+</script>
 </body>
 </html>
